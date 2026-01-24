@@ -7,8 +7,8 @@ function getResponseStatus(event: H3Event): number {
   return event.node?.res?.statusCode ?? 200
 }
 
-export default defineNitroPlugin(async (nitroApp) => {
-  await initLogger()
+export default defineNitroPlugin((nitroApp) => {
+  initLogger()
 
   nitroApp.hooks.hook('request', (event) => {
     const log = createRequestLogger({

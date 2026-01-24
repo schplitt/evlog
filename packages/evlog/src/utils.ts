@@ -37,26 +37,15 @@ export function isDev(): boolean {
 }
 
 /**
- * Read package.json info (server-side only).
+ * Auto-detect environment context from env variables
  */
-export function getPackageInfo(): { name?: string, version?: string } {
-  if (isClient()) {
-    return {}
-  }
-  return {}
-}
-
-/**
- * Auto-detect environment context from various sources
- */
-export async function detectEnvironment(): Promise<Partial<EnvironmentContext>> {
-  const pkg = await getPackageInfo()
+export function detectEnvironment(): Partial<EnvironmentContext> {
   const env = typeof process !== 'undefined' ? process.env : {}
 
   return {
     environment: env.NODE_ENV || 'development',
-    service: env.SERVICE_NAME || pkg.name || 'app',
-    version: env.APP_VERSION || pkg.version,
+    service: env.SERVICE_NAME || 'app',
+    version: env.APP_VERSION,
     commitHash: env.COMMIT_SHA
       || env.GITHUB_SHA
       || env.VERCEL_GIT_COMMIT_SHA

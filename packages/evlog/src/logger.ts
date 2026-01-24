@@ -12,8 +12,8 @@ let globalPretty = isDev()
  * Initialize the logger with configuration.
  * Call this once at application startup.
  */
-export async function initLogger(config: LoggerConfig = {}): Promise<void> {
-  const detected = await detectEnvironment()
+export function initLogger(config: LoggerConfig = {}): void {
+  const detected = detectEnvironment()
 
   globalEnv = {
     service: config.env?.service ?? detected.service ?? 'app',
@@ -26,21 +26,8 @@ export async function initLogger(config: LoggerConfig = {}): Promise<void> {
   globalPretty = config.pretty ?? isDev()
 }
 
-/**
- * Initialize the logger synchronously (uses only env vars, no package.json).
- */
-export function initLoggerSync(config: LoggerConfig = {}): void {
-  const env = typeof process !== 'undefined' ? process.env : {}
-
-  globalEnv = {
-    service: config.env?.service ?? env.SERVICE_NAME ?? 'app',
-    environment: config.env?.environment ?? env.NODE_ENV ?? 'development',
-    version: config.env?.version ?? env.APP_VERSION,
-    commitHash: config.env?.commitHash ?? env.COMMIT_SHA ?? env.GITHUB_SHA,
-    region: config.env?.region ?? env.VERCEL_REGION ?? env.AWS_REGION,
-  }
-
-  globalPretty = config.pretty ?? isDev()
+function getConsoleMethod(level: LogLevel): 'log' | 'error' | 'warn' {
+  return level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'
 }
 
 function emitWideEvent(level: LogLevel, event: Record<string, unknown>): void {
@@ -54,8 +41,7 @@ function emitWideEvent(level: LogLevel, event: Record<string, unknown>): void {
   if (globalPretty) {
     prettyPrintWideEvent(formatted)
   } else {
-    const consoleMethod = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'
-    console[consoleMethod](JSON.stringify(formatted))
+    console[getConsoleMethod(level)](JSON.stringify(formatted))
   }
 }
 

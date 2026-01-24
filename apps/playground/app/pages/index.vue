@@ -4,7 +4,6 @@ const loadingError = ref(false)
 const loadingWideEvent = ref(false)
 
 function testClientLog() {
-  log.info('ui', 'Button clicked from client')
   log.info({ action: 'test_client', timestamp: Date.now() })
 }
 

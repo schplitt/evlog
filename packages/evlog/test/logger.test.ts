@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createRequestLogger, getEnvironment, initLoggerSync, log } from '../src/logger'
+import { createRequestLogger, getEnvironment, initLogger, log } from '../src/logger'
 
-describe('initLoggerSync', () => {
+describe('initLogger', () => {
   beforeEach(() => {
     vi.unstubAllEnvs()
   })
@@ -11,7 +11,7 @@ describe('initLoggerSync', () => {
   })
 
   it('initializes with default values', () => {
-    initLoggerSync()
+    initLogger()
     const env = getEnvironment()
 
     expect(env.service).toBe('app')
@@ -19,7 +19,7 @@ describe('initLoggerSync', () => {
   })
 
   it('uses custom config values', () => {
-    initLoggerSync({
+    initLogger({
       env: {
         service: 'my-api',
         environment: 'staging',
@@ -39,7 +39,7 @@ describe('initLoggerSync', () => {
     vi.stubEnv('NODE_ENV', 'production')
     vi.stubEnv('APP_VERSION', '2.0.0')
 
-    initLoggerSync()
+    initLogger()
     const env = getEnvironment()
 
     expect(env.service).toBe('env-service')
@@ -50,7 +50,7 @@ describe('initLoggerSync', () => {
   it('prefers config over env vars', () => {
     vi.stubEnv('SERVICE_NAME', 'env-service')
 
-    initLoggerSync({
+    initLogger({
       env: { service: 'config-service' },
     })
 
@@ -66,7 +66,7 @@ describe('log', () => {
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(console, 'warn').mockImplementation(() => {})
-    initLoggerSync({ pretty: false })
+    initLogger({ pretty: false })
   })
 
   afterEach(() => {
@@ -109,7 +109,7 @@ describe('createRequestLogger', () => {
   beforeEach(() => {
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    initLoggerSync({ pretty: false })
+    initLogger({ pretty: false })
   })
 
   afterEach(() => {
