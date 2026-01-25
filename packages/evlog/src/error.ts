@@ -41,14 +41,14 @@ export class EvlogError extends Error {
   }
 
   /**
-   * H3 compatibility: statusCode getter for automatic HTTP error handling
+   * HTTP compatibility: statusCode getter for automatic error handling
    */
   get statusCode(): number {
     return this.status
   }
 
   /**
-   * H3 compatibility: data getter for passing structured error info to frontend
+   * HTTP compatibility: data getter for passing structured error info to frontend
    */
   get data(): { why?: string, fix?: string, link?: string } | undefined {
     if (!this.why && !this.fix && !this.link) return undefined

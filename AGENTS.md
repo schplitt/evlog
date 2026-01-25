@@ -102,7 +102,7 @@ throw createError({
 })
 ```
 
-**H3/Nitro Compatibility**: `EvlogError` is automatically recognized by H3. When thrown in a Nuxt/Nitro API route, the error is converted to an HTTP response with:
+**Nitro Compatibility**: When thrown in a Nuxt/Nitro API route, the error is automatically converted to an HTTP response with:
 - `statusCode` from the `status` field
 - `message` as the error message
 - `data` containing `{ why, fix, link }` for frontend consumption

@@ -228,7 +228,7 @@ throw createError({
 
 ## Frontend Integration
 
-evlog errors are H3-compatible. When thrown in Nuxt/Nitro, they're automatically converted to HTTP responses with structured data.
+evlog errors work with any Nitro-powered framework. When thrown, they're automatically converted to HTTP responses with structured data.
 
 Use `parseError()` to extract all fields at the top level:
 

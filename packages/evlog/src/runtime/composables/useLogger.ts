@@ -1,9 +1,15 @@
-import type { H3Event } from 'h3'
 import type { RequestLogger } from '../../types'
+
+interface ServerEvent {
+  context: {
+    log?: RequestLogger
+    [key: string]: unknown
+  }
+}
 
 /**
  * Get the request-scoped logger from the event context.
- * Must be called within a server handler with an H3 event.
+ * Must be called within a server handler.
  *
  * @example
  * ```ts
@@ -16,7 +22,7 @@ import type { RequestLogger } from '../../types'
  * })
  * ```
  */
-export function useLogger(event: H3Event): RequestLogger {
+export function useLogger(event: ServerEvent): RequestLogger {
   const log = event.context.log as RequestLogger | undefined
 
   if (!log) {

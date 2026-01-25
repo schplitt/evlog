@@ -31,6 +31,5 @@ export default defineBuildConfig({
     '@nuxt/schema',
     'nitropack',
     'nitropack/runtime',
-    'h3',
   ],
 })

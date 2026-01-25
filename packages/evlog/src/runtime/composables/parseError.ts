@@ -44,7 +44,7 @@ export function parseError(error: unknown): ParsedError {
   if (error && typeof error === 'object' && 'data' in error) {
     const { data, message: fetchMessage, statusCode: fetchStatusCode } = error as FetchError
 
-    // Extract evlog data from H3 error response
+    // Extract evlog data from error response
     const evlogData = data?.data as { why?: string, fix?: string, link?: string } | undefined
 
     return {

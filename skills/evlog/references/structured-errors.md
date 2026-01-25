@@ -365,9 +365,9 @@ The wide event will include:
 - Suggest fixes that aren't actually possible
 - Create errors without any context
 
-## H3/Nitro Compatibility
+## Nitro Compatibility
 
-evlog errors are automatically compatible with H3/Nitro. When thrown in a Nuxt or Nitro API route, the error is converted to an HTTP response:
+evlog errors work with any Nitro-powered framework. When thrown in an API route, the error is automatically converted to an HTTP response:
 
 ```typescript
 // Backend - just throw

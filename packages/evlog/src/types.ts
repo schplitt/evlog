@@ -142,7 +142,7 @@ export interface ErrorOptions {
 }
 
 /**
- * H3 event context with evlog logger attached
+ * Server event context with evlog logger attached
  */
 export interface EvlogEventContext {
   log?: RequestLogger

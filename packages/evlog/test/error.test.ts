@@ -35,8 +35,8 @@ describe('EvlogError', () => {
     expect(error.status).toBe(500)
   })
 
-  describe('H3 compatibility', () => {
-    it('provides statusCode getter for H3', () => {
+  describe('HTTP compatibility', () => {
+    it('provides statusCode getter for HTTP errors', () => {
       const error = new EvlogError({ message: 'Not found', status: 404 })
 
       expect(error.statusCode).toBe(404)
