@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { defineError, EvlogError } from '../src/error'
+import { createError, createEvlogError, EvlogError } from '../src/error'
 
 describe('EvlogError', () => {
   it('creates error with message only', () => {
@@ -7,6 +7,7 @@ describe('EvlogError', () => {
 
     expect(error.message).toBe('Something went wrong')
     expect(error.name).toBe('EvlogError')
+    expect(error.status).toBe(500)
     expect(error.why).toBeUndefined()
     expect(error.fix).toBeUndefined()
     expect(error.link).toBeUndefined()
@@ -15,15 +16,54 @@ describe('EvlogError', () => {
   it('creates error with full options', () => {
     const error = new EvlogError({
       message: 'Payment failed',
+      status: 402,
       why: 'Card declined by issuer',
       fix: 'Try a different payment method',
       link: 'https://docs.example.com/payments',
     })
 
     expect(error.message).toBe('Payment failed')
+    expect(error.status).toBe(402)
     expect(error.why).toBe('Card declined by issuer')
     expect(error.fix).toBe('Try a different payment method')
     expect(error.link).toBe('https://docs.example.com/payments')
+  })
+
+  it('defaults to 500 status', () => {
+    const error = new EvlogError({ message: 'Server error' })
+
+    expect(error.status).toBe(500)
+  })
+
+  describe('H3 compatibility', () => {
+    it('provides statusCode getter for H3', () => {
+      const error = new EvlogError({ message: 'Not found', status: 404 })
+
+      expect(error.statusCode).toBe(404)
+      expect(error.statusCode).toBe(error.status)
+    })
+
+    it('provides data getter with structured info', () => {
+      const error = new EvlogError({
+        message: 'Payment failed',
+        status: 402,
+        why: 'Card declined',
+        fix: 'Use another card',
+        link: 'https://example.com',
+      })
+
+      expect(error.data).toEqual({
+        why: 'Card declined',
+        fix: 'Use another card',
+        link: 'https://example.com',
+      })
+    })
+
+    it('returns undefined data when no extra fields', () => {
+      const error = new EvlogError('Simple error')
+
+      expect(error.data).toBeUndefined()
+    })
   })
 
   it('preserves cause error', () => {
@@ -78,6 +118,7 @@ describe('EvlogError', () => {
       const cause = new Error('Original')
       const error = new EvlogError({
         message: 'Test error',
+        status: 400,
         why: 'Because',
         fix: 'Do this',
         link: 'https://example.com',
@@ -88,6 +129,7 @@ describe('EvlogError', () => {
 
       expect(json.name).toBe('EvlogError')
       expect(json.message).toBe('Test error')
+      expect(json.status).toBe(400)
       expect(json.why).toBe('Because')
       expect(json.fix).toBe('Do this')
       expect(json.link).toBe('https://example.com')
@@ -103,23 +145,42 @@ describe('EvlogError', () => {
   })
 })
 
-describe('defineError', () => {
+describe('createError', () => {
   it('creates EvlogError with string', () => {
-    const error = defineError('Quick error')
+    const error = createError('Quick error')
     expect(error).toBeInstanceOf(EvlogError)
     expect(error.message).toBe('Quick error')
+    expect(error.status).toBe(500)
   })
 
   it('creates EvlogError with options', () => {
-    const error = defineError({
+    const error = createError({
       message: 'Detailed error',
+      status: 422,
       why: 'Reason',
       fix: 'Solution',
     })
 
     expect(error).toBeInstanceOf(EvlogError)
     expect(error.message).toBe('Detailed error')
+    expect(error.status).toBe(422)
     expect(error.why).toBe('Reason')
     expect(error.fix).toBe('Solution')
+  })
+})
+
+describe('createEvlogError', () => {
+  it('is an alias for createError', () => {
+    expect(createEvlogError).toBe(createError)
+  })
+
+  it('creates EvlogError', () => {
+    const error = createEvlogError({
+      message: 'Alias test',
+      status: 401,
+    })
+
+    expect(error).toBeInstanceOf(EvlogError)
+    expect(error.status).toBe(401)
   })
 })

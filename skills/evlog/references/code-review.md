@@ -145,7 +145,7 @@ export default defineEventHandler(async (event) => {
 throw new Error('Failed to create user')
 
 // ✅ After
-throw defineError({
+throw createError({
   message: 'Failed to create user',
   why: 'Email address already registered',
   fix: 'Use a different email or log in to existing account',
@@ -167,7 +167,7 @@ try {
 try {
   await externalApi.call()
 } catch (error) {
-  throw defineError({
+  throw createError({
     message: 'External API call failed',
     why: `API returned: ${error.message}`,
     fix: 'Check API credentials and try again',
@@ -193,7 +193,7 @@ try {
   await riskyOperation()
 } catch (error) {
   log.error(error, { step: 'riskyOperation' })
-  throw defineError({
+  throw createError({
     message: 'Operation failed',
     why: error.message,
     fix: 'Check input and retry',
@@ -217,7 +217,7 @@ export default defineEventHandler(async (event) => {
 })
 
 // ✅ After (Nuxt/Nitro)
-import { useLogger, defineError } from 'evlog'
+import { useLogger, createError } from 'evlog'
 
 export default defineEventHandler(async (event) => {
   const log = useLogger(event)
@@ -231,7 +231,7 @@ export default defineEventHandler(async (event) => {
     return result
   } catch (error) {
     log.error(error, { step: 'processOrder' })
-    throw defineError({
+    throw createError({
       message: 'Order processing failed',
       why: error.message,
       fix: 'Check the order data and try again',
@@ -253,12 +253,18 @@ export default defineEventHandler(async (event) => {
 
 ### Errors
 
-- [ ] All errors use `defineError()` instead of `new Error()`
-- [ ] Every error has a clear `message`
+- [ ] All errors use `createError()` instead of `new Error()` (import from `evlog`)
+- [ ] Every error has a clear `message` and appropriate `status` code
 - [ ] Complex errors include `why` explaining root cause
 - [ ] Fixable errors include `fix` with actionable steps
 - [ ] Documented errors include `link` to docs
 - [ ] Wrapped errors preserve `cause`
+
+### Frontend Error Handling
+
+- [ ] API errors are caught and displayed with full context (message, why, fix)
+- [ ] Toasts or error components use the structured data from `error.data.data`
+- [ ] Links to documentation are actionable (buttons/links in toasts)
 
 ### Context
 
@@ -272,8 +278,8 @@ export default defineEventHandler(async (event) => {
 | Anti-Pattern | Fix |
 |--------------|-----|
 | Multiple `console.log` in one function | Single wide event with `useLogger(event).set()` |
-| `throw new Error('...')` | `throw defineError({ message, why, fix })` |
-| `console.error(e); throw e` | `log.error(e); throw defineError(...)` |
+| `throw new Error('...')` | `throw createError({ message, status, why, fix })` |
+| `console.error(e); throw e` | `log.error(e); throw createError(...)` |
 | No logging in request handlers | Add `useLogger(event)` (Nuxt/Nitro) or `createRequestLogger()` (standalone) |
 | Flat log data | Grouped objects: `{ user: {...}, cart: {...} }` |
 | Abbreviated field names | Descriptive names: `userId` not `uid` |
@@ -288,7 +294,7 @@ Use these when leaving review feedback:
 
 ### Generic Error
 
-> This error would benefit from evlog's structured error pattern. Consider using `defineError({ message, why, fix })` to provide more debugging context.
+> This error would benefit from evlog's structured error pattern. Consider using `import { createError } from 'evlog'` and `createError({ message, status, why, fix })` to provide more debugging context.
 
 ### Missing Request Context
 

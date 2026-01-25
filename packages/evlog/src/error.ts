@@ -8,6 +8,7 @@ import { colors, isServer } from './utils'
  * ```ts
  * throw new EvlogError({
  *   message: 'Failed to sync repository',
+ *   status: 503,
  *   why: 'GitHub API rate limit exceeded',
  *   fix: 'Wait 1 hour or use a different token',
  *   link: 'https://docs.github.com/en/rest/rate-limit',
@@ -17,6 +18,7 @@ import { colors, isServer } from './utils'
  */
 export class EvlogError extends Error {
 
+  readonly status: number
   readonly why?: string
   readonly fix?: string
   readonly link?: string
@@ -27,6 +29,7 @@ export class EvlogError extends Error {
     super(opts.message, { cause: opts.cause })
 
     this.name = 'EvlogError'
+    this.status = opts.status ?? 500
     this.why = opts.why
     this.fix = opts.fix
     this.link = opts.link
@@ -34,6 +37,25 @@ export class EvlogError extends Error {
     // Maintain proper stack trace in V8
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, EvlogError)
+    }
+  }
+
+  /**
+   * H3 compatibility: statusCode getter for automatic HTTP error handling
+   */
+  get statusCode(): number {
+    return this.status
+  }
+
+  /**
+   * H3 compatibility: data getter for passing structured error info to frontend
+   */
+  get data(): { why?: string, fix?: string, link?: string } | undefined {
+    if (!this.why && !this.fix && !this.link) return undefined
+    return {
+      why: this.why,
+      fix: this.fix,
+      link: this.link,
     }
   }
 
@@ -81,6 +103,7 @@ export class EvlogError extends Error {
     return {
       name: this.name,
       message: this.message,
+      status: this.status,
       why: this.why,
       fix: this.fix,
       link: this.link,
@@ -96,17 +119,21 @@ export class EvlogError extends Error {
 /**
  * Create an EvlogError (functional alternative to `new EvlogError()`)
  *
- * Named `defineError` to avoid conflict with Nuxt's built-in `createError`
- *
  * @example
  * ```ts
- * throw defineError({
+ * throw createError({
  *   message: 'Payment failed',
+ *   status: 402,
  *   why: 'Card declined by issuer',
  *   fix: 'Try a different payment method',
  * })
  * ```
  */
-export function defineError(options: ErrorOptions | string): EvlogError {
+export function createError(options: ErrorOptions | string): EvlogError {
   return new EvlogError(options)
 }
+
+/**
+ * Alias for createError - used for auto-imports to avoid conflicts with Nuxt/Nitro's createError
+ */
+export const createEvlogError = createError

@@ -49,8 +49,12 @@ export default defineNuxtModule<ModuleOptions>({
         from: resolver.resolve('../runtime/composables/log'),
       },
       {
-        name: 'defineError',
+        name: 'createEvlogError',
         from: resolver.resolve('../error'),
+      },
+      {
+        name: 'parseError',
+        from: resolver.resolve('../runtime/composables/parseError'),
       },
     ])
 
@@ -64,7 +68,7 @@ export default defineNuxtModule<ModuleOptions>({
         from: resolver.resolve('../runtime/composables/log'),
       },
       {
-        name: 'defineError',
+        name: 'createEvlogError',
         from: resolver.resolve('../error'),
       },
     ])

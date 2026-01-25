@@ -129,6 +129,8 @@ export interface Log {
 export interface ErrorOptions {
   /** What actually happened */
   message: string
+  /** HTTP status code (default: 500) */
+  status?: number
   /** Why this error occurred */
   why?: string
   /** How to fix this issue */

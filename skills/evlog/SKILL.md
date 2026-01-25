@@ -25,7 +25,7 @@ Review and improve logging patterns in TypeScript/JavaScript codebases. Transfor
 **Key transformations:**
 
 - `console.log` spam → wide events with `useLogger(event)`
-- `throw new Error('...')` → `defineError({ message, why, fix })`
+- `throw new Error('...')` → `createError({ message, status, why, fix })`
 - Scattered request logs → `useLogger(event)` (Nuxt/Nitro) or `createRequestLogger()` (standalone)
 
 ## Quick Reference
@@ -105,9 +105,12 @@ throw new Error('Payment failed')
 **Transform to:**
 
 ```typescript
+import { createError } from 'evlog'
+
 // ✅ Self-documenting error
-throw defineError({
+throw createError({
   message: 'Payment failed',
+  status: 402,
   why: 'Card declined by issuer',
   fix: 'Try a different payment method or contact your bank',
   link: 'https://docs.example.com/payments/declined',
@@ -191,15 +194,88 @@ export default defineNitroConfig({
 })
 ```
 
+## Structured Error Levels
+
+Not all errors need the same level of detail. Use the appropriate level:
+
+### Minimal (internal errors)
+
+```typescript
+throw createError({ message: 'Database connection failed', status: 500 })
+```
+
+### Standard (user-facing errors)
+
+```typescript
+throw createError({
+  message: 'Payment failed',
+  status: 402,
+  why: 'Card declined by issuer',
+})
+```
+
+### Complete (documented errors with actionable fix)
+
+```typescript
+throw createError({
+  message: 'Payment failed',
+  status: 402,
+  why: 'Card declined by issuer - insufficient funds',
+  fix: 'Please use a different payment method or contact your bank',
+  link: 'https://docs.example.com/payments/declined',
+})
+```
+
+## Frontend Integration
+
+evlog errors are H3-compatible. When thrown in Nuxt/Nitro, they're automatically converted to HTTP responses with structured data.
+
+Use `parseError()` to extract all fields at the top level:
+
+```typescript
+import { createError, parseError } from 'evlog'
+
+// Backend - just throw the error
+throw createError({
+  message: 'Payment failed',
+  status: 402,
+  why: 'Card declined',
+  fix: 'Try another card',
+  link: 'https://docs.example.com/payments',
+})
+
+// Frontend - use parseError() for direct access
+try {
+  await $fetch('/api/checkout')
+} catch (err) {
+  const error = parseError(err)
+
+  // Direct access: error.message, error.why, error.fix, error.link
+  toast.add({
+    title: error.message,
+    description: error.why,
+    color: 'error',
+    actions: error.link
+      ? [{ label: 'Learn more', onClick: () => window.open(error.link) }]
+      : undefined,
+  })
+
+  if (error.fix) console.info(`💡 Fix: ${error.fix}`)
+}
+```
+
+**The difference**: A generic error shows "An error occurred". A structured error shows the message, explains why, suggests a fix, and links to docs.
+
 ## Review Checklist
 
 When reviewing code, check for:
 
 1. **Console.log statements** → Replace with `useLogger(event).set()` or wide events
-2. **Generic errors** → Add `why`, `fix`, and `link` fields with `defineError()`
+2. **Generic errors** → Add `status`, `why`, `fix`, and `link` fields with `createError()`
 3. **Scattered request logs** → Use `useLogger(event)` (Nuxt/Nitro) or `createRequestLogger()` (standalone)
 4. **Missing context** → Add user, business, and outcome context with `log.set()`
 5. **No duration tracking** → Let `emit()` handle it automatically
+6. **No frontend error handling** → Catch errors and display toasts with structured data
 
 ## Loading Reference Files
 

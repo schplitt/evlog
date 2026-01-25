@@ -1,7 +1,12 @@
 <script setup lang="ts">
+import { createError, parseError } from 'evlog'
+
+const toast = useToast()
+
 const loadingSuccess = ref(false)
 const loadingError = ref(false)
 const loadingWideEvent = ref(false)
+const loadingStructuredError = ref(false)
 
 function testClientLog() {
   log.info({ action: 'test_client', timestamp: Date.now() })
@@ -16,8 +21,9 @@ function testClientError() {
 }
 
 function testStructuredError() {
-  const error = defineError({
+  const error = createError({
     message: 'Test structured error',
+    status: 400,
     why: 'This is a demonstration of the EvlogError format',
     fix: 'No fix needed - this is just a demo',
     link: 'https://github.com/hugorcd/evlog',
@@ -51,6 +57,39 @@ async function testWideEvent() {
     await $fetch('/api/test/wide-event')
   } finally {
     loadingWideEvent.value = false
+  }
+}
+
+async function testStructuredApiError() {
+  loadingStructuredError.value = true
+  try {
+    await $fetch('/api/test/structured-error')
+  } catch (err) {
+    // parseError extracts all evlog fields at the top level
+    const error = parseError(err)
+
+    toast.add({
+      title: error.message,
+      description: error.why,
+      color: 'error',
+      actions: error.link
+        ? [
+          {
+            label: 'Learn more',
+            onClick: () => {
+              window.open(error.link, '_blank')
+            },
+          },
+        ]
+        : undefined,
+    })
+
+    // Direct access to fix
+    if (error.fix) {
+      console.info(`💡 Fix: ${error.fix}`)
+    }
+  } finally {
+    loadingStructuredError.value = false
   }
 }
 </script>
@@ -90,7 +129,7 @@ async function testWideEvent() {
             @click="testClientError"
           />
           <UButton
-            label="defineError()"
+            label="createError()"
             color="error"
             @click="testStructuredError"
           />
@@ -124,6 +163,26 @@ async function testWideEvent() {
             :loading="loadingWideEvent"
             color="neutral"
             @click="testWideEvent"
+          />
+        </div>
+      </section>
+
+      <USeparator />
+
+      <section class="space-y-4">
+        <h2 class="text-xl font-semibold text-highlighted">
+          Structured Error → Toast
+        </h2>
+        <p class="text-muted text-sm">
+          This demonstrates how a structured <code class="text-highlighted">createError()</code> from the backend
+          can be displayed as a toast in the frontend with all context (message, why, fix, link).
+        </p>
+        <div class="flex flex-wrap gap-3">
+          <UButton
+            label="Trigger API Error"
+            :loading="loadingStructuredError"
+            color="error"
+            @click="testStructuredApiError"
           />
         </div>
       </section>

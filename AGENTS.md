@@ -90,15 +90,43 @@ log.emit()
 ### Structured Errors
 
 ```typescript
-import { createError, EvlogError } from 'evlog'
+import { createError } from 'evlog'
 
 throw createError({
   message: 'Payment failed',
+  status: 402,  // HTTP status code (default: 500)
   why: 'Card declined by issuer',
   fix: 'Try a different payment method or contact your bank',
   link: 'https://docs.example.com/payments/declined',
   cause: originalError,
 })
+```
+
+**H3/Nitro Compatibility**: `EvlogError` is automatically recognized by H3. When thrown in a Nuxt/Nitro API route, the error is converted to an HTTP response with:
+- `statusCode` from the `status` field
+- `message` as the error message
+- `data` containing `{ why, fix, link }` for frontend consumption
+
+**Frontend Integration**: Use `parseError()` to extract all fields at the top level:
+
+```typescript
+import { parseError } from 'evlog'
+
+try {
+  await $fetch('/api/checkout')
+} catch (err) {
+  const error = parseError(err)
+
+  // Direct access to all fields
+  toast.add({
+    title: error.message,
+    description: error.why,
+    color: 'error',
+    actions: error.link ? [{ label: 'Learn more', onClick: () => window.open(error.link) }] : undefined,
+  })
+
+  if (error.fix) console.info(`💡 Fix: ${error.fix}`)
+}
 ```
 
 ## Framework Integration
@@ -142,13 +170,18 @@ Every wide event should include:
 
 ### Error Structure
 
-When creating errors, always provide:
+When creating errors with `createError()`:
 
-- `message`: What happened (user-facing)
-- `why`: Technical reason (for debugging)
-- `fix`: Actionable solution (for developers)
-- `link`: Documentation URL (optional)
-- `cause`: Original error (if wrapping)
+| Field | Required | Description |
+|-------|----------|-------------|
+| `message` | Yes | What happened (user-facing) |
+| `status` | No | HTTP status code (default: 500) |
+| `why` | No | Technical reason (for debugging) |
+| `fix` | No | Actionable solution (for developers/users) |
+| `link` | No | Documentation URL for more info |
+| `cause` | No | Original error (if wrapping)
+
+**Best practice**: At minimum, provide `message` and `status`. Add `why` and `fix` for errors that users can act on. Add `link` for documented error codes.
 
 ### Code Style
 

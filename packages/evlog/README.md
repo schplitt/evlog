@@ -104,7 +104,7 @@ That's it. Now use `useLogger(event)` in any API route:
 
 ```typescript
 // server/api/checkout.post.ts
-import { useLogger, defineError } from 'evlog'
+import { useLogger, createError } from 'evlog'
 
 export default defineEventHandler(async (event) => {
   const log = useLogger(event)
@@ -124,8 +124,9 @@ export default defineEventHandler(async (event) => {
   } catch (error) {
     log.error(error, { step: 'payment' })
 
-    throw defineError({
+    throw createError({
       message: 'Payment failed',
+      status: 402,
       why: error.message,
       fix: 'Try a different payment method or contact your bank',
     })
@@ -173,7 +174,7 @@ Same API, same wide events:
 
 ```typescript
 // routes/api/documents/[id]/export.post.ts
-import { useLogger, defineError } from 'evlog'
+import { useLogger, createError } from 'evlog'
 
 export default defineEventHandler(async (event) => {
   const log = useLogger(event)
@@ -189,8 +190,9 @@ export default defineEventHandler(async (event) => {
   // Load document from database
   const document = await db.documents.findUnique({ where: { id: documentId } })
   if (!document) {
-    throw defineError({
+    throw createError({
       message: 'Document not found',
+      status: 404,
       why: `No document with ID "${documentId}" exists`,
       fix: 'Check the document ID and try again',
     })
@@ -206,8 +208,9 @@ export default defineEventHandler(async (event) => {
   } catch (error) {
     log.error(error, { step: 'export-generation' })
 
-    throw defineError({
+    throw createError({
       message: 'Export failed',
+      status: 500,
       why: `Failed to generate ${body.format} export: ${error.message}`,
       fix: 'Try a different format or contact support',
     })
@@ -238,7 +241,7 @@ Errors should tell you **what** happened, **why**, and **how to fix it**.
 
 ```typescript
 // server/api/repos/sync.post.ts
-import { useLogger, defineError } from 'evlog'
+import { useLogger, createError } from 'evlog'
 
 export default defineEventHandler(async (event) => {
   const log = useLogger(event)
@@ -252,8 +255,9 @@ export default defineEventHandler(async (event) => {
   } catch (error) {
     log.error(error, { step: 'github-sync' })
 
-    throw defineError({
+    throw createError({
       message: 'Failed to sync repository',
+      status: 503,
       why: 'GitHub API rate limit exceeded',
       fix: 'Wait 1 hour or use a different token',
       link: 'https://docs.github.com/en/rest/rate-limit',
@@ -302,7 +306,7 @@ migrationLog.emit()
 
 ```typescript
 // workers/sync-job.ts
-import { initLogger, createRequestLogger, defineError } from 'evlog'
+import { initLogger, createRequestLogger, createError } from 'evlog'
 
 initLogger({
   env: {
@@ -378,18 +382,51 @@ log.emit()                         // Emit final event
 log.getContext()                   // Get current context
 ```
 
-### `defineError(options)`
+### `createError(options)`
 
-Create a structured error.
+Create a structured error with HTTP status support. Import from `evlog` directly to avoid conflicts with Nuxt/Nitro's `createError`.
+
+> **Note**: `createEvlogError` is also available as an auto-imported alias in Nuxt/Nitro to avoid conflicts.
 
 ```typescript
-defineError({
+import { createError } from 'evlog'
+
+createError({
   message: string   // What happened
+  status?: number   // HTTP status code (default: 500)
   why?: string      // Why it happened
   fix?: string      // How to fix it
   link?: string     // Documentation URL
   cause?: Error     // Original error
 })
+```
+
+### `parseError(error)`
+
+Parse a caught error into a flat structure with all evlog fields. Auto-imported in Nuxt.
+
+```typescript
+import { parseError } from 'evlog'
+
+try {
+  await $fetch('/api/checkout')
+} catch (err) {
+  const error = parseError(err)
+
+  // Direct access to all fields
+  console.log(error.message)  // "Payment failed"
+  console.log(error.status)   // 402
+  console.log(error.why)      // "Card declined"
+  console.log(error.fix)      // "Try another card"
+  console.log(error.link)     // "https://docs.example.com/..."
+
+  // Use with toast
+  toast.add({
+    title: error.message,
+    description: error.why,
+    color: 'error',
+  })
+}
 ```
 
 ## Framework Support
@@ -404,6 +441,32 @@ evlog works with any framework powered by [Nitro](https://nitro.unjs.io/):
 | **SolidStart** | `plugins: ['evlog/nitro']` |
 | **TanStack Start** | `plugins: ['evlog/nitro']` |
 | **Standalone Nitro** | `plugins: ['evlog/nitro']` |
+
+## Agent Skills
+
+evlog provides [Agent Skills](https://github.com/boristane/agent-skills) to help AI coding assistants understand and implement proper logging patterns in your codebase.
+
+### Installation
+
+```bash
+npx add-skill hugorcd/evlog
+```
+
+### What it does
+
+Once installed, your AI assistant will:
+- Review your logging code and suggest wide event patterns
+- Help refactor scattered `console.log` calls into structured events
+- Guide you to use `createError()` for self-documenting errors
+- Ensure proper use of `useLogger(event)` in Nuxt/Nitro routes
+
+### Examples
+
+```
+Add logging to this endpoint
+Review my logging code
+Help me set up logging for this service
+```
 
 ## Philosophy
 

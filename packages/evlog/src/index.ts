@@ -1,6 +1,7 @@
-export { EvlogError, defineError } from './error'
+export { EvlogError, createError, createEvlogError } from './error'
 export { createRequestLogger, getEnvironment, initLogger, log } from './logger'
 export { useLogger } from './runtime/composables/useLogger'
+export { parseError } from './runtime/composables/parseError'
 
 export type {
   BaseWideEvent,
@@ -13,3 +14,5 @@ export type {
   RequestLogger,
   WideEvent,
 } from './types'
+
+export type { ParsedError } from './runtime/composables/parseError'

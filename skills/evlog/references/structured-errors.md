@@ -24,10 +24,11 @@ When these errors reach your logs or monitoring, you have no idea:
 ## Structured Error Anatomy
 
 ```typescript
-import { defineError } from 'evlog'
+import { createError } from 'evlog'
 
-throw defineError({
+throw createError({
   message: 'Payment failed',              // What happened
+  status: 402,                            // HTTP status code
   why: 'Card declined by issuer',         // Why it happened
   fix: 'Try a different payment method',  // How to fix it
   link: 'https://docs.example.com/...',   // More information
@@ -130,7 +131,7 @@ The underlying error that triggered this one.
 try {
   await stripe.charges.create(...)
 } catch (error) {
-  throw defineError({
+  throw createError({
     message: 'Payment failed',
     why: `Stripe error: ${error.code}`,
     fix: 'Contact support with error code',
@@ -145,8 +146,9 @@ try {
 
 ```typescript
 // Rate limiting
-throw defineError({
+throw createError({
   message: 'GitHub sync temporarily unavailable',
+  status: 429,
   why: 'API rate limit exceeded (5000/hour)',
   fix: 'Wait until rate limit resets or use authenticated requests',
   link: 'https://docs.github.com/en/rest/rate-limit',
@@ -154,8 +156,9 @@ throw defineError({
 })
 
 // Authentication
-throw defineError({
+throw createError({
   message: 'Unable to connect to Stripe',
+  status: 503,
   why: 'Invalid API key provided',
   fix: 'Check STRIPE_SECRET_KEY environment variable',
   link: 'https://docs.stripe.com/keys',
@@ -163,8 +166,9 @@ throw defineError({
 })
 
 // Network
-throw defineError({
+throw createError({
   message: 'Failed to fetch user data',
+  status: 504,
   why: 'Connection timeout after 30s',
   fix: 'Check network connectivity and try again',
   cause: error,
@@ -175,23 +179,26 @@ throw defineError({
 
 ```typescript
 // Missing required field
-throw defineError({
+throw createError({
   message: 'Invalid checkout request',
+  status: 400,
   why: 'Required field "email" is missing',
   fix: 'Include a valid email address in the request body',
   link: 'https://your-api.com/docs/checkout#request-body',
 })
 
 // Invalid format
-throw defineError({
+throw createError({
   message: 'Invalid email format',
+  status: 422,
   why: `"${email}" is not a valid email address`,
   fix: 'Provide an email in the format user@example.com',
 })
 
 // Business rule violation
-throw defineError({
+throw createError({
   message: 'Cannot cancel subscription',
+  status: 409,
   why: 'Subscription has already been cancelled',
   fix: 'No action needed - subscription is already inactive',
 })
@@ -201,23 +208,26 @@ throw defineError({
 
 ```typescript
 // Not found
-throw defineError({
+throw createError({
   message: 'User not found',
+  status: 404,
   why: `No user with ID "${userId}" exists`,
   fix: 'Verify the user ID is correct',
 })
 
 // Constraint violation
-throw defineError({
+throw createError({
   message: 'Cannot create duplicate account',
+  status: 409,
   why: `User with email "${email}" already exists`,
   fix: 'Use a different email or log in to existing account',
   link: 'https://your-app.com/login',
 })
 
 // Connection
-throw defineError({
+throw createError({
   message: 'Database unavailable',
+  status: 503,
   why: 'Connection pool exhausted',
   fix: 'Reduce concurrent connections or increase pool size',
   cause: error,
@@ -227,8 +237,9 @@ throw defineError({
 ### Permission Errors
 
 ```typescript
-throw defineError({
+throw createError({
   message: 'Access denied',
+  status: 403,
   why: 'User lacks "admin" role required for this action',
   fix: 'Contact an administrator to request access',
   link: 'https://your-app.com/docs/permissions',
@@ -264,7 +275,7 @@ async function processPayment(cart, user) {
       source: user.paymentMethodId,
     })
   } catch (error) {
-    throw defineError({
+    throw createError({
       message: 'Payment failed',
       why: getStripeErrorReason(error),
       fix: getStripeErrorFix(error),
@@ -301,7 +312,7 @@ Structured errors integrate seamlessly with wide events:
 
 ```typescript
 // server/api/checkout.post.ts
-import { useLogger, defineError } from 'evlog'
+import { useLogger, createError } from 'evlog'
 
 export default defineEventHandler(async (event) => {
   const log = useLogger(event)
@@ -311,7 +322,7 @@ export default defineEventHandler(async (event) => {
   } catch (error) {
     // EvlogError fields are automatically captured
     log.error(error, { step: 'payment' })
-    throw defineError({
+    throw createError({
       message: 'Payment failed',
       why: error.message,
       fix: 'Try a different payment method',
@@ -354,21 +365,74 @@ The wide event will include:
 - Suggest fixes that aren't actually possible
 - Create errors without any context
 
+## H3/Nitro Compatibility
+
+evlog errors are automatically compatible with H3/Nitro. When thrown in a Nuxt or Nitro API route, the error is converted to an HTTP response:
+
+```typescript
+// Backend - just throw
+throw createError({
+  message: 'Payment failed',
+  status: 402,
+  why: 'Card declined',
+  fix: 'Try another card',
+  link: 'https://docs.example.com/payments',
+})
+
+// HTTP Response:
+// Status: 402
+// Body: {
+//   statusCode: 402,
+//   message: "Payment failed",
+//   data: { why: "Card declined", fix: "Try another card", link: "..." }
+// }
+```
+
+### Frontend Integration
+
+Use `parseError()` to extract all fields at the top level:
+
+```typescript
+import { parseError } from 'evlog'
+
+try {
+  await $fetch('/api/checkout')
+} catch (err) {
+  const error = parseError(err)
+
+  // Direct access: error.message, error.why, error.fix, error.link
+  toast.add({
+    title: error.message,
+    description: error.why,
+    color: 'error',
+    actions: error.link
+      ? [{ label: 'Learn more', onClick: () => window.open(error.link) }]
+      : undefined,
+  })
+
+  if (error.fix) console.info(`💡 Fix: ${error.fix}`)
+}
+```
+
+**The difference**: A generic error shows "An error occurred". A structured error shows the message, explains why, suggests a fix, and links to documentation.
+
 ## Error Message Templates
 
 Use these as starting points:
 
 ```typescript
 // Resource not found
-defineError({
+createError({
   message: '${Resource} not found',
+  status: 404,
   why: 'No ${resource} with ${identifier} "${value}" exists',
   fix: 'Verify the ${identifier} is correct',
 })
 
 // External service failure
-defineError({
+createError({
   message: 'Unable to ${action}',
+  status: 503,
   why: '${Service} returned error: ${code}',
   fix: '${actionable_step}',
   link: '${service_docs_url}',
@@ -376,15 +440,17 @@ defineError({
 })
 
 // Validation failure
-defineError({
+createError({
   message: 'Invalid ${field}',
+  status: 400,
   why: '"${value}" ${reason}',
   fix: '${expected_format}',
 })
 
 // Permission denied
-defineError({
+createError({
   message: 'Access denied',
+  status: 403,
   why: '${reason} required for this action',
   fix: '${how_to_get_access}',
 })

@@ -128,7 +128,7 @@ With the evlog module, use `useLogger(event)` - it's auto-created and auto-emitt
 
 ```typescript
 // server/api/checkout.post.ts
-import { useLogger, defineError } from 'evlog'
+import { useLogger, createError } from 'evlog'
 
 export default defineEventHandler(async (event) => {
   const log = useLogger(event)  // Auto-created by evlog
@@ -144,7 +144,7 @@ export default defineEventHandler(async (event) => {
     log.set({ payment: { id: payment.id, method: payment.method } })
   } catch (error) {
     log.error(error, { step: 'payment' })
-    throw defineError({
+    throw createError({
       message: 'Payment failed',
       why: error.message,
       fix: 'Try a different payment method',
@@ -219,7 +219,7 @@ export default defineEventHandler(async (event) => {
 
 ```typescript
 // server/api/checkout.post.ts
-import { useLogger, defineError } from 'evlog'
+import { useLogger, createError } from 'evlog'
 
 export default defineEventHandler(async (event) => {
   const log = useLogger(event)
@@ -237,7 +237,7 @@ export default defineEventHandler(async (event) => {
     return { orderId: payment.orderId }
   } catch (error) {
     log.error(error, { step: 'payment' })
-    throw defineError({
+    throw createError({
       message: 'Payment failed',
       why: error.message,
       fix: 'Try a different payment method',
