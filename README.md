@@ -96,6 +96,8 @@ export default defineNuxtConfig({
       service: 'my-app',
       environment: process.env.NODE_ENV,
     },
+    // Optional: only log specific routes (supports glob patterns)
+    include: ['/api/**'],
   },
 })
 ```
@@ -350,8 +352,22 @@ initLogger({
     region?: string      // Deployment region
   },
   pretty?: boolean       // Pretty print (default: true in dev)
+  include?: string[]     // Route patterns to log (glob), e.g. ['/api/**']
 })
 ```
+
+### Pretty Output Format
+
+In development, evlog uses a compact tree format:
+
+```
+16:45:31.060 INFO [my-app] GET /api/checkout 200 in 234ms
+  ├─ user: id=123 plan=premium
+  ├─ cart: items=3 total=9999
+  └─ payment: id=pay_xyz method=card
+```
+
+In production (`pretty: false`), logs are emitted as JSON for machine parsing.
 
 ### `log`
 

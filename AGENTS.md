@@ -150,9 +150,22 @@ export default defineNuxtConfig({
       service: 'my-app',
       environment: process.env.NODE_ENV,
     },
+    // Optional: only log specific routes (supports glob patterns)
+    include: ['/api/**'],
+    // Optional: force pretty printing (default: true in dev, false in prod)
+    pretty: true,
   },
 })
 ```
+
+#### Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `env.service` | `string` | `'app'` | Service name shown in logs |
+| `env.environment` | `string` | Auto-detected | Environment name |
+| `include` | `string[]` | `undefined` | Route patterns to log (glob). If not set, all routes are logged |
+| `pretty` | `boolean` | `true` in dev | Pretty print logs with tree formatting |
 
 ### Nitro
 

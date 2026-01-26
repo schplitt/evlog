@@ -19,6 +19,14 @@ export interface ModuleOptions {
    * @default true in development, false in production
    */
   pretty?: boolean
+
+  /**
+   * Route patterns to include in logging.
+   * Supports glob patterns like '/api/**'.
+   * If not set, all routes are logged.
+   * @example ['/api/**', '/auth/**']
+   */
+  include?: string[]
 }
 
 export default defineNuxtModule<ModuleOptions>({

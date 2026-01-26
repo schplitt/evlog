@@ -1,7 +1,34 @@
-import { defineNitroPlugin } from 'nitropack/runtime'
-import { useRuntimeConfig } from 'nitropack/runtime'
+import { defineNitroPlugin, useRuntimeConfig } from 'nitropack/runtime'
 import { createRequestLogger, initLogger } from '../logger'
 import type { RequestLogger, ServerEvent } from '../types'
+
+interface EvlogConfig {
+  env?: Record<string, unknown>
+  pretty?: boolean
+  include?: string[]
+}
+
+function matchesPattern(path: string, pattern: string): boolean {
+  // Convert glob pattern to regex
+  const regexPattern = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&') // Escape special regex chars except * and ?
+    .replace(/\*\*/g, '{{GLOBSTAR}}') // Temp placeholder for **
+    .replace(/\*/g, '[^/]*') // * matches anything except /
+    .replace(/{{GLOBSTAR}}/g, '.*') // ** matches anything including /
+    .replace(/\?/g, '[^/]') // ? matches single char except /
+
+  const regex = new RegExp(`^${regexPattern}$`)
+  return regex.test(path)
+}
+
+function shouldLog(path: string, include?: string[]): boolean {
+  // If no include patterns, log everything
+  if (!include || include.length === 0) {
+    return true
+  }
+  // Log only if path matches at least one include pattern
+  return include.some(pattern => matchesPattern(path, pattern))
+}
 
 function getResponseStatus(event: ServerEvent): number {
   // Node.js style
@@ -24,7 +51,7 @@ function getResponseStatus(event: ServerEvent): number {
 
 export default defineNitroPlugin((nitroApp) => {
   const config = useRuntimeConfig()
-  const evlogConfig = config.evlog as { env?: Record<string, unknown>, pretty?: boolean } | undefined
+  const evlogConfig = config.evlog as EvlogConfig | undefined
 
   initLogger({
     env: evlogConfig?.env,
@@ -33,6 +60,12 @@ export default defineNitroPlugin((nitroApp) => {
 
   nitroApp.hooks.hook('request', (event) => {
     const e = event as ServerEvent
+
+    // Skip logging for routes not matching include patterns
+    if (!shouldLog(e.path, evlogConfig?.include)) {
+      return
+    }
+
     const log = createRequestLogger({
       method: e.method,
       path: e.path,

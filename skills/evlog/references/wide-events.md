@@ -19,6 +19,16 @@ During an incident, you're grep-ing through thousands of these trying to reconst
 
 **Wide events emit once with everything:**
 
+Development (pretty format):
+```
+10:23:45.235 ERROR [api] POST /checkout 500 in 234ms
+  ├─ user: id=user_123 plan=premium accountAge=847
+  ├─ cart: items=3 total=9999
+  ├─ payment: provider=stripe method=card
+  └─ error: code=card_declined retriable=false
+```
+
+Production (JSON format):
 ```json
 {
   "timestamp": "2025-01-24T10:23:45.235Z",

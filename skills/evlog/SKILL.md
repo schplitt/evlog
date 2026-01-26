@@ -181,6 +181,8 @@ export default defineNuxtConfig({
       service: 'my-app',
       environment: process.env.NODE_ENV,
     },
+    // Optional: only log specific routes (supports glob patterns)
+    include: ['/api/**'],
   },
 })
 ```
