@@ -172,6 +172,8 @@ export default defineNitroConfig({
 })
 ```
 
+> **Note**: For early Nitro v3 support, use `evlog/nitrov3` instead of `evlog/nitro`.
+
 Same API, same wide events:
 
 ```typescript
