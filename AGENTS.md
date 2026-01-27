@@ -148,12 +148,9 @@ export default defineNuxtConfig({
   evlog: {
     env: {
       service: 'my-app',
-      environment: process.env.NODE_ENV,
     },
     // Optional: only log specific routes (supports glob patterns)
     include: ['/api/**'],
-    // Optional: force pretty printing (default: true in dev, false in prod)
-    pretty: true,
   },
 })
 ```
@@ -166,6 +163,21 @@ export default defineNuxtConfig({
 | `env.environment` | `string` | Auto-detected | Environment name |
 | `include` | `string[]` | `undefined` | Route patterns to log (glob). If not set, all routes are logged |
 | `pretty` | `boolean` | `true` in dev | Pretty print logs with tree formatting |
+| `sampling.rates` | `object` | `undefined` | Sampling rates per log level (0-100%). Error defaults to 100% |
+
+**Tip:** Use `$production` to sample only in production:
+
+```typescript
+export default defineNuxtConfig({
+  modules: ['evlog/nuxt'],
+  evlog: { env: { service: 'my-app' } },
+  $production: {
+    evlog: {
+      sampling: { rates: { info: 10, warn: 50, debug: 0 } },
+    },
+  },
+})
+```
 
 ### Nitro
 
