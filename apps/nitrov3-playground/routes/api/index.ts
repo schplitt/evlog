@@ -4,7 +4,7 @@ import { defineHandler } from 'nitro/h3'
 export default defineHandler((event) => {
   const log = useLogger(event)
   log.set({
-    playground: 'nitrov3',
+    playground: 'nitro/v3',
   })
   return {
     message: 'evlog Nitro v3 Playground',
