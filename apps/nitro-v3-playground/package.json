@@ -1,5 +1,5 @@
 {
-  "name": "nitrov3-playground",
+  "name": "evlog-nitro-v3-playground",
   "type": "module",
   "scripts": {
     "build": "nitro build",
