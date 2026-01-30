@@ -4,6 +4,33 @@ export default defineAppConfig({
     title: 'evlog',
     description: 'Wide events and structured errors for TypeScript. One log per request, full context, errors that explain why and how to fix.',
   },
+  assistant: {
+    faqQuestions: [
+      {
+        category: 'Getting Started',
+        items: [
+          'What is evlog?',
+          'How do I install evlog?',
+          'How do I use useLogger?',
+        ],
+      },
+      {
+        category: 'Core Features',
+        items: [
+          'What are wide events?',
+          'How do I create structured errors?',
+          'How do I use parseError?',
+        ],
+      },
+      {
+        category: 'Production',
+        items: [
+          'How do I configure sampling?',
+          'How do I send logs to Axiom?',
+        ],
+      },
+    ],
+  },
   ui: {
     colors: {
       primary: 'blue',
