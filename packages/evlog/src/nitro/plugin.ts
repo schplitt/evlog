@@ -1,12 +1,14 @@
+import type { NitroApp } from 'nitropack/types'
 import { defineNitroPlugin, useRuntimeConfig } from 'nitropack/runtime'
 import { createRequestLogger, initLogger } from '../logger'
-import type { RequestLogger, ServerEvent } from '../types'
+import type { RequestLogger, SamplingConfig, ServerEvent, TailSamplingContext, WideEvent } from '../types'
 import { shouldLog } from '../nitro'
 
 interface EvlogConfig {
   env?: Record<string, unknown>
   pretty?: boolean
   include?: string[]
+  sampling?: SamplingConfig
 }
 
 function getResponseStatus(event: ServerEvent): number {
@@ -28,6 +30,17 @@ function getResponseStatus(event: ServerEvent): number {
   return 200
 }
 
+function callDrainHook(nitroApp: NitroApp, emittedEvent: WideEvent | null, event: ServerEvent): void {
+  if (emittedEvent) {
+    nitroApp.hooks.callHook('evlog:drain', {
+      event: emittedEvent,
+      request: { method: event.method, path: event.path, requestId: event.context.requestId as string | undefined },
+    }).catch((err) => {
+      console.error('[evlog] drain failed:', err)
+    })
+  }
+}
+
 export default defineNitroPlugin((nitroApp) => {
   const config = useRuntimeConfig()
   const evlogConfig = config.evlog as EvlogConfig | undefined
@@ -35,6 +48,7 @@ export default defineNitroPlugin((nitroApp) => {
   initLogger({
     env: evlogConfig?.env,
     pretty: evlogConfig?.pretty,
+    sampling: evlogConfig?.sampling,
   })
 
   nitroApp.hooks.hook('request', (event) => {
@@ -45,6 +59,9 @@ export default defineNitroPlugin((nitroApp) => {
       return
     }
 
+    // Store start time for duration calculation in tail sampling
+    e.context._evlogStartTime = Date.now()
+
     const log = createRequestLogger({
       method: e.method,
       path: e.path,
@@ -53,20 +70,67 @@ export default defineNitroPlugin((nitroApp) => {
     e.context.log = log
   })
 
-  nitroApp.hooks.hook('afterResponse', (event) => {
-    const e = event as ServerEvent
+  nitroApp.hooks.hook('error', async (error, { event }) => {
+    const e = event as ServerEvent | undefined
+    if (!e) return
+
     const log = e.context.log as RequestLogger | undefined
     if (log) {
-      log.set({ status: getResponseStatus(e) })
-      log.emit()
+      log.error(error as Error)
+
+      // Get the actual error status code
+      const errorStatus = (error as { statusCode?: number }).statusCode ?? 500
+      log.set({ status: errorStatus })
+
+      // Build tail sampling context
+      const startTime = e.context._evlogStartTime as number | undefined
+      const durationMs = startTime ? Date.now() - startTime : undefined
+
+      const tailCtx: TailSamplingContext = {
+        status: errorStatus,
+        duration: durationMs,
+        path: e.path,
+        method: e.method,
+        context: log.getContext(),
+        shouldKeep: false,
+      }
+
+      // Call evlog:emit:keep hook
+      await nitroApp.hooks.callHook('evlog:emit:keep', tailCtx)
+
+      e.context._evlogEmitted = true
+
+      const emittedEvent = log.emit({ _forceKeep: tailCtx.shouldKeep })
+      callDrainHook(nitroApp, emittedEvent, e)
     }
   })
 
-  nitroApp.hooks.hook('error', (error, { event }) => {
-    const e = event as ServerEvent | undefined
-    const log = e?.context.log as RequestLogger | undefined
+  nitroApp.hooks.hook('afterResponse', async (event) => {
+    const e = event as ServerEvent
+    // Skip if already emitted by error hook
+    if (e.context._evlogEmitted) return
+
+    const log = e.context.log as RequestLogger | undefined
     if (log) {
-      log.error(error as Error)
+      const status = getResponseStatus(e)
+      log.set({ status })
+
+      const startTime = e.context._evlogStartTime as number | undefined
+      const durationMs = startTime ? Date.now() - startTime : undefined
+
+      const tailCtx: TailSamplingContext = {
+        status,
+        duration: durationMs,
+        path: e.path,
+        method: e.method,
+        context: log.getContext(),
+        shouldKeep: false,
+      }
+
+      await nitroApp.hooks.callHook('evlog:emit:keep', tailCtx)
+
+      const emittedEvent = log.emit({ _forceKeep: tailCtx.shouldKeep })
+      callDrainHook(nitroApp, emittedEvent, e)
     }
   })
 })

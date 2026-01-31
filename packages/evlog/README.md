@@ -94,13 +94,23 @@ export default defineNuxtConfig({
   evlog: {
     env: {
       service: 'my-app',
-      environment: process.env.NODE_ENV,
     },
     // Optional: only log specific routes (supports glob patterns)
     include: ['/api/**'],
   },
 })
 ```
+
+> **Tip:** Use `$production` to enable [sampling](#sampling) only in production:
+> ```typescript
+> export default defineNuxtConfig({
+>   modules: ['evlog/nuxt'],
+>   evlog: { env: { service: 'my-app' } },
+>   $production: {
+>     evlog: { sampling: { rates: { info: 10, warn: 50, debug: 0 } } },
+>   },
+> })
+> ```
 
 That's it. Now use `useLogger(event)` in any API route:
 
@@ -353,6 +363,77 @@ initLogger({
   },
   pretty?: boolean       // Pretty print (default: true in dev)
   include?: string[]     // Route patterns to log (glob), e.g. ['/api/**']
+  sampling?: {
+    rates?: {            // Head sampling (random per level)
+      info?: number      // 0-100, default 100
+      warn?: number      // 0-100, default 100
+      debug?: number     // 0-100, default 100
+      error?: number     // 0-100, default 100 (always logged unless set to 0)
+    }
+    keep?: Array<{       // Tail sampling (force keep based on outcome)
+      status?: number    // Keep if status >= value
+      duration?: number  // Keep if duration >= value (ms)
+      path?: string      // Keep if path matches glob pattern
+    }>
+  }
+})
+```
+
+### Sampling
+
+At scale, logging everything can become expensive. evlog supports two sampling strategies:
+
+#### Head Sampling (rates)
+
+Random sampling based on log level, decided before the request completes:
+
+```typescript
+initLogger({
+  sampling: {
+    rates: {
+      info: 10,   // Keep 10% of info logs
+      warn: 50,   // Keep 50% of warning logs
+      debug: 0,   // Disable debug logs
+      // error defaults to 100% (always logged)
+    },
+  },
+})
+```
+
+#### Tail Sampling (keep)
+
+Force-keep logs based on request outcome, evaluated after the request completes. Useful to always capture slow requests or critical paths:
+
+```typescript
+// nuxt.config.ts
+export default defineNuxtConfig({
+  modules: ['evlog/nuxt'],
+  evlog: {
+    sampling: {
+      rates: { info: 10 },  // Only 10% of info logs
+      keep: [
+        { duration: 1000 },           // Always keep if duration >= 1000ms
+        { status: 400 },              // Always keep if status >= 400
+        { path: '/api/critical/**' }, // Always keep critical paths
+      ],
+    },
+  },
+})
+```
+
+#### Custom Tail Sampling Hook
+
+For business-specific conditions (premium users, feature flags), use the `evlog:emit:keep` Nitro hook:
+
+```typescript
+// server/plugins/evlog-custom.ts
+export default defineNitroPlugin((nitroApp) => {
+  nitroApp.hooks.hook('evlog:emit:keep', (ctx) => {
+    // Always keep logs for premium users
+    if (ctx.context.user?.premium) {
+      ctx.shouldKeep = true
+    }
+  })
 })
 ```
 

@@ -148,12 +148,9 @@ export default defineNuxtConfig({
   evlog: {
     env: {
       service: 'my-app',
-      environment: process.env.NODE_ENV,
     },
     // Optional: only log specific routes (supports glob patterns)
     include: ['/api/**'],
-    // Optional: force pretty printing (default: true in dev, false in prod)
-    pretty: true,
   },
 })
 ```
@@ -166,6 +163,85 @@ export default defineNuxtConfig({
 | `env.environment` | `string` | Auto-detected | Environment name |
 | `include` | `string[]` | `undefined` | Route patterns to log (glob). If not set, all routes are logged |
 | `pretty` | `boolean` | `true` in dev | Pretty print logs with tree formatting |
+| `sampling.rates` | `object` | `undefined` | Head sampling rates per log level (0-100%). Error defaults to 100% |
+| `sampling.keep` | `array` | `undefined` | Tail sampling conditions to force-keep logs (see below) |
+
+#### Sampling Configuration
+
+evlog supports two sampling strategies:
+
+**Head Sampling (rates)**: Random sampling based on log level, decided before request completes.
+
+**Tail Sampling (keep)**: Force-keep logs based on request outcome, evaluated after request completes.
+
+```typescript
+export default defineNuxtConfig({
+  modules: ['evlog/nuxt'],
+  evlog: {
+    sampling: {
+      // Head sampling: random percentage per level
+      rates: { info: 10, warn: 50, debug: 0 },
+      // Tail sampling: force keep based on outcome (OR logic)
+      keep: [
+        { duration: 1000 },           // Keep if duration >= 1000ms
+        { status: 400 },              // Keep if status >= 400
+        { path: '/api/critical/**' }, // Keep if path matches
+      ],
+    },
+  },
+})
+```
+
+**Custom Tail Sampling Hook**: For business-specific conditions, use the `evlog:emit:keep` Nitro hook:
+
+```typescript
+// server/plugins/evlog-custom.ts
+export default defineNitroPlugin((nitroApp) => {
+  nitroApp.hooks.hook('evlog:emit:keep', (ctx) => {
+    if (ctx.context.user?.premium) {
+      ctx.shouldKeep = true
+    }
+  })
+})
+```
+
+#### Log Draining
+
+Use the `evlog:drain` hook to send logs to external services like Axiom, Loki, or custom endpoints.
+
+```typescript
+// server/plugins/evlog-axiom.ts
+export default defineNitroPlugin((nitroApp) => {
+  nitroApp.hooks.hook('evlog:drain', async (ctx) => {
+    await fetch('https://api.axiom.co/v1/datasets/logs/ingest', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.AXIOM_TOKEN}` },
+      body: JSON.stringify([ctx.event])
+    })
+  })
+})
+```
+
+The `DrainContext` contains:
+- `event`: The complete `WideEvent` with all fields (timestamp, level, service, etc.)
+- `request`: Optional request metadata (`method`, `path`, `requestId`)
+
+**Tip:** Use `$production` to sample only in production:
+
+```typescript
+export default defineNuxtConfig({
+  modules: ['evlog/nuxt'],
+  evlog: { env: { service: 'my-app' } },
+  $production: {
+    evlog: {
+      sampling: {
+        rates: { info: 10, warn: 50, debug: 0 },
+        keep: [{ duration: 1000 }, { status: 400 }],
+      },
+    },
+  },
+})
+```
 
 ### Nitro
 
@@ -211,6 +287,69 @@ When creating errors with `createError()`:
 - Write tests for new functionality
 - Document public APIs with JSDoc comments
 - **No HTML comments in Vue templates** - Never use `<!-- comment -->` in `<template>` blocks. The code should be self-explanatory.
+
+### Security: Preventing Sensitive Data Leakage
+
+Wide events capture comprehensive context, making it easy to accidentally log sensitive data. **Never log:**
+
+| Category | Examples | Risk |
+|----------|----------|------|
+| Credentials | Passwords, API keys, tokens, secrets | Account compromise |
+| Payment data | Full card numbers, CVV, bank accounts | PCI compliance violation |
+| Personal data (PII) | SSN, passport numbers, emails (unmasked) | Privacy laws (GDPR, CCPA) |
+| Authentication | Session tokens, JWTs, refresh tokens | Session hijacking |
+
+**Safe logging pattern** - explicitly select which fields to log:
+
+```typescript
+// ❌ DANGEROUS - logs everything including password
+const body = await readBody(event)
+log.set({ user: body })
+
+// ✅ SAFE - explicitly select fields
+log.set({
+  user: {
+    id: body.id,
+    plan: body.plan,
+    // password: body.password ← NEVER include
+  },
+})
+```
+
+**Sanitization helpers** - create utilities for masking data:
+
+```typescript
+// server/utils/sanitize.ts
+export function maskEmail(email: string): string {
+  const [local, domain] = email.split('@')
+  if (!domain) return '***'
+  return `${local[0]}***@${domain[0]}***.${domain.split('.')[1]}`
+}
+
+export function maskCard(card: string): string {
+  return `****${card.slice(-4)}`
+}
+```
+
+**Production checklist**:
+
+- [ ] No passwords or secrets in logs
+- [ ] No full credit card numbers (only last 4 digits)
+- [ ] No API keys or tokens
+- [ ] PII is masked or omitted
+- [ ] Request bodies are selectively logged (not `log.set({ body })`)
+
+### Client-Side Logging
+
+The `log` API also works on the client side (auto-imported in Nuxt):
+
+```typescript
+// In a Vue component or composable
+log.info('checkout', 'User initiated checkout')
+log.error({ action: 'payment', error: 'validation_failed' })
+```
+
+Client logs output to the browser console with colored tags in development. Use for debugging and development - for production analytics, use dedicated services.
 
 ## Publishing
 

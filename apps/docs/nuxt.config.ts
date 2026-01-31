@@ -14,6 +14,12 @@ export default defineNuxtConfig({
     name: 'evlog MCP',
   },
 
+  vite: {
+    optimizeDeps: {
+      include: ['@vercel/oidc'],
+    },
+  },
+
   mdc: {
     highlight: {
       noApiRoute: false,
