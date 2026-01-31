@@ -13,6 +13,7 @@ interface EvlogConfig {
   env?: Record<string, unknown>
   pretty?: boolean
   include?: string[]
+  exclude?: string[]
   sampling?: SamplingConfig
 }
 
@@ -57,8 +58,8 @@ export default definePlugin((nitroApp) => {
       pathname
     } = parseURL(e.req.url)
   
-    // Skip logging for routes not matching include patterns
-    if (!shouldLog(pathname, evlogConfig?.include)) {
+    // Skip logging for routes not matching include/exclude patterns
+    if (!shouldLog(pathname, evlogConfig?.include, evlogConfig?.exclude)) {
       return
     }
   
