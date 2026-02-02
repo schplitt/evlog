@@ -38,6 +38,32 @@ declare module 'nitropack/types' {
 }
 
 /**
+ * Transport configuration for sending client logs to the server
+ */
+export interface TransportConfig {
+  /**
+   * Enable sending logs to the server API
+   * @default false
+   */
+  enabled?: boolean
+
+  /**
+   * API endpoint for log ingestion
+   * @default '/api/_evlog/ingest'
+   */
+  endpoint?: string
+}
+
+/**
+ * Payload sent from client to server for log ingestion
+ */
+export interface IngestPayload {
+  timestamp: string
+  level: 'info' | 'error' | 'warn' | 'debug'
+  [key: string]: unknown
+}
+
+/**
  * Sampling rates per log level (0-100 percentage)
  */
 export interface SamplingRates {
