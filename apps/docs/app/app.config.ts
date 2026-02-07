@@ -48,22 +48,6 @@ export default defineAppConfig({
         base: 'active:translate-y-px transition-transform duration-300',
       },
     },
-    prose: {
-      slots: {
-        h1: {
-          base: 'font-serif tracking-tight',
-        },
-        h2: {
-          base: 'font-serif tracking-tight',
-        },
-        h3: {
-          base: 'font-serif tracking-tight',
-        },
-        h4: {
-          base: 'font-serif tracking-tight',
-        },
-      },
-    },
     contentSurround: {
       variants: {
         direction: {

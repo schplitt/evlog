@@ -95,8 +95,8 @@ log.info({ action: 'click' })
         <p class="section-label mb-4 font-mono text-xs uppercase tracking-widest text-muted">
           Features
         </p>
-        <h2 class="editorial-title text-3xl font-bold text-highlighted md:text-4xl">
-          Everything you need<span class="evlog-dot">.</span>
+        <h2 class="section-title">
+          Everything you need<span class="text-primary">.</span>
         </h2>
       </Motion>
 
@@ -110,7 +110,7 @@ log.info({ action: 'click' })
           :in-view-options="{ once: true }"
         >
           <div class="group h-full border border-muted/50 bg-muted/30 p-5 transition-colors duration-300 hover:border-muted">
-            <h3 class="mb-2 font-mono font-semibold text-evlog-blue">
+            <h3 class="mb-2 font-mono font-semibold text-primary">
               {{ feature.title }}
             </h3>
             <p class="mb-4 text-sm leading-relaxed text-toned">

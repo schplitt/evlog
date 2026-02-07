@@ -170,8 +170,8 @@ function getLevelColor(level: string) {
             <span v-else>$ npx skills add hugorcd/evlog</span>
           </button>
 
-          <h1 class="editorial-title mb-6 text-5xl font-bold text-highlighted sm:text-5xl lg:text-6xl">
-            Logging that<br>makes sense<span class="evlog-dot">.</span>
+          <h1 class="font-mono mb-6 text-5xl sm:text-6xl lg:text-7xl">
+            Logging that<br>makes sense<span class="text-primary">.</span>
           </h1>
 
           <p class="mb-8 max-w-md text-base text-muted leading-relaxed">
@@ -183,25 +183,19 @@ function getLevelColor(level: string) {
             <UButton
               to="/getting-started/introduction"
               size="lg"
-              class="bg-evlog-blue hover:bg-evlog-blue/90 text-white border-0"
-            >
-              Get Started
-              <template #trailing>
-                <UIcon name="i-lucide-arrow-right" class="size-4" />
-              </template>
-            </UButton>
+              class="bg-primary hover:bg-primary/90 text-white border-0"
+              trailing-icon="i-lucide-arrow-right"
+              label="Get Started"
+            />
             <UButton
               to="https://github.com/hugorcd/evlog"
               target="_blank"
               size="lg"
               variant="outline"
               color="neutral"
-            >
-              <template #leading>
-                <UIcon name="i-simple-icons-github" class="size-4" />
-              </template>
-              GitHub
-            </UButton>
+              label="GitHub"
+              leading-icon="i-simple-icons-github"
+            />
           </div>
         </Motion>
 
@@ -230,7 +224,7 @@ function getLevelColor(level: string) {
               <button
                 class="px-4 py-2.5 text-xs font-medium transition-colors border-b-2 -mb-px"
                 :class="mode === 'chaos'
-                  ? 'text-white border-evlog-blue'
+                  ? 'text-white border-primary'
                   : 'text-zinc-500 border-transparent hover:text-zinc-300'"
                 @click="mode = 'chaos'"
               >
@@ -239,7 +233,7 @@ function getLevelColor(level: string) {
               <button
                 class="px-4 py-2.5 text-xs font-medium transition-colors border-b-2 -mb-px"
                 :class="mode === 'wide'
-                  ? 'text-white border-evlog-blue'
+                  ? 'text-white border-primary'
                   : 'text-zinc-500 border-transparent hover:text-zinc-300'"
                 @click="mode = 'wide'"
               >
