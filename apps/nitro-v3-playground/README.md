@@ -1,18 +1,14 @@
-# Nitro starter
-
-Create your API and deploy it anywhere with this Nitro starter.
+# Nitro v3 evlog playground
 
 ## Getting started
 
 ```bash
-npm install
-npm run dev
+bun install
+bun run dev
 ```
 
 ## Deploying
 
 ```bash
-npm run build
+bun run build
 ```
-
-Then checkout the [Nitro documentation](https://v3.nitro.build/deploy) to learn more about the different deployment presets.
