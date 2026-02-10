@@ -40,6 +40,8 @@ evlog/
 │       ├── src/
 │       │   ├── nuxt/        # Nuxt module
 │       │   ├── nitro/       # Nitro plugin
+│       │   ├── adapters/    # Log drain adapters (Axiom, OTLP, PostHog, Sentry)
+│       │   ├── enrichers/   # Built-in enrichers (UserAgent, Geo, RequestSize, TraceContext)
 │       │   └── runtime/     # Runtime code (client/, server/, utils/)
 │       └── test/            # Tests
 └── .github/                  # CI/CD workflows
@@ -165,6 +167,8 @@ export default defineNuxtConfig({
 | `pretty` | `boolean` | `true` in dev | Pretty print logs with tree formatting |
 | `sampling.rates` | `object` | `undefined` | Head sampling rates per log level (0-100%). Error defaults to 100% |
 | `sampling.keep` | `array` | `undefined` | Tail sampling conditions to force-keep logs (see below) |
+| `transport.enabled` | `boolean` | `false` | Enable sending client logs to the server |
+| `transport.endpoint` | `string` | `'/api/_evlog/ingest'` | API endpoint for client log ingestion |
 
 #### Sampling Configuration
 
@@ -205,18 +209,100 @@ export default defineNitroPlugin((nitroApp) => {
 })
 ```
 
-#### Log Draining
+#### Log Draining & Adapters
 
-Use the `evlog:drain` hook to send logs to external services like Axiom, Loki, or custom endpoints.
+evlog provides built-in adapters for popular observability platforms. Use the `evlog:drain` hook to send logs to external services.
+
+> **Creating a new adapter?** Follow the skill at `.agents/skills/create-adapter/SKILL.md`. It covers all touchpoints: source code, build config, package exports, tests, and all documentation updates.
+
+**Built-in Adapters:**
+
+| Adapter | Import | Description |
+|---------|--------|-------------|
+| Axiom | `evlog/axiom` | Send logs to Axiom for querying and dashboards |
+| OTLP | `evlog/otlp` | OpenTelemetry Protocol for Grafana, Datadog, Honeycomb, etc. |
+| PostHog | `evlog/posthog` | Send logs to PostHog as events for product analytics |
+| Sentry | `evlog/sentry` | Send logs to Sentry Logs for structured logging and debugging |
+
+**Using Axiom Adapter:**
 
 ```typescript
-// server/plugins/evlog-axiom.ts
+// server/plugins/evlog-drain.ts
+import { createAxiomDrain } from 'evlog/axiom'
+
+export default defineNitroPlugin((nitroApp) => {
+  nitroApp.hooks.hook('evlog:drain', createAxiomDrain())
+})
+```
+
+Set environment variables: `NUXT_AXIOM_TOKEN` and `NUXT_AXIOM_DATASET`.
+
+**Using OTLP Adapter:**
+
+```typescript
+// server/plugins/evlog-drain.ts
+import { createOTLPDrain } from 'evlog/otlp'
+
+export default defineNitroPlugin((nitroApp) => {
+  nitroApp.hooks.hook('evlog:drain', createOTLPDrain())
+})
+```
+
+Set environment variable: `NUXT_OTLP_ENDPOINT`.
+
+**Using PostHog Adapter:**
+
+```typescript
+// server/plugins/evlog-drain.ts
+import { createPostHogDrain } from 'evlog/posthog'
+
+export default defineNitroPlugin((nitroApp) => {
+  nitroApp.hooks.hook('evlog:drain', createPostHogDrain())
+})
+```
+
+Set environment variable: `NUXT_POSTHOG_API_KEY` (and optionally `NUXT_POSTHOG_HOST` for EU or self-hosted instances).
+
+**Using Sentry Adapter:**
+
+```typescript
+// server/plugins/evlog-drain.ts
+import { createSentryDrain } from 'evlog/sentry'
+
+export default defineNitroPlugin((nitroApp) => {
+  nitroApp.hooks.hook('evlog:drain', createSentryDrain())
+})
+```
+
+Set environment variable: `NUXT_SENTRY_DSN`.
+
+**Multiple Destinations:**
+
+```typescript
+// server/plugins/evlog-drain.ts
+import { createAxiomDrain } from 'evlog/axiom'
+import { createOTLPDrain } from 'evlog/otlp'
+
+export default defineNitroPlugin((nitroApp) => {
+  const axiom = createAxiomDrain()
+  const otlp = createOTLPDrain()
+
+  nitroApp.hooks.hook('evlog:drain', async (ctx) => {
+    await Promise.allSettled([axiom(ctx), otlp(ctx)])
+  })
+})
+```
+
+**Custom Adapter:**
+
+```typescript
+// server/plugins/evlog-drain.ts
 export default defineNitroPlugin((nitroApp) => {
   nitroApp.hooks.hook('evlog:drain', async (ctx) => {
-    await fetch('https://api.axiom.co/v1/datasets/logs/ingest', {
+    await fetch('https://your-service.com/logs', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${process.env.AXIOM_TOKEN}` },
-      body: JSON.stringify([ctx.event])
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ctx.event),
     })
   })
 })
@@ -225,6 +311,7 @@ export default defineNitroPlugin((nitroApp) => {
 The `DrainContext` contains:
 - `event`: The complete `WideEvent` with all fields (timestamp, level, service, etc.)
 - `request`: Optional request metadata (`method`, `path`, `requestId`)
+- `headers`: Safe HTTP headers (sensitive headers are filtered)
 
 **Tip:** Use `$production` to sample only in production:
 
@@ -242,6 +329,66 @@ export default defineNuxtConfig({
   },
 })
 ```
+
+#### Event Enrichment
+
+Enrichers add derived context to wide events after emit, before drain. Use the `evlog:enrich` hook to register enrichers.
+
+> **Creating a new enricher?** Follow the skill at `.agents/skills/create-enricher/SKILL.md`. It covers all touchpoints: source code, tests, and documentation updates.
+
+**Built-in Enrichers:**
+
+| Enricher | Import | Event Field | Description |
+|----------|--------|-------------|-------------|
+| User Agent | `evlog/enrichers` | `userAgent` | Parse browser, OS, device type from User-Agent header |
+| Geo | `evlog/enrichers` | `geo` | Extract country, region, city from platform headers (Vercel, Cloudflare) |
+| Request Size | `evlog/enrichers` | `requestSize` | Capture request/response payload sizes from Content-Length |
+| Trace Context | `evlog/enrichers` | `traceContext` | Extract W3C trace context (traceId, spanId) from traceparent header |
+
+**Using Built-in Enrichers:**
+
+```typescript
+// server/plugins/evlog-enrich.ts
+import {
+  createUserAgentEnricher,
+  createGeoEnricher,
+  createRequestSizeEnricher,
+  createTraceContextEnricher,
+} from 'evlog/enrichers'
+
+export default defineNitroPlugin((nitroApp) => {
+  const enrichers = [
+    createUserAgentEnricher(),
+    createGeoEnricher(),
+    createRequestSizeEnricher(),
+    createTraceContextEnricher(),
+  ]
+
+  nitroApp.hooks.hook('evlog:enrich', (ctx) => {
+    for (const enricher of enrichers) enricher(ctx)
+  })
+})
+```
+
+**Custom Enricher:**
+
+```typescript
+// server/plugins/evlog-enrich.ts
+export default defineNitroPlugin((nitroApp) => {
+  nitroApp.hooks.hook('evlog:enrich', (ctx) => {
+    ctx.event.deploymentId = process.env.DEPLOYMENT_ID
+    ctx.event.region = process.env.FLY_REGION
+  })
+})
+```
+
+The `EnrichContext` contains:
+- `event`: The emitted `WideEvent` (mutable — add or modify fields directly)
+- `request`: Optional request metadata (`method`, `path`, `requestId`)
+- `headers`: Safe HTTP headers (sensitive headers are filtered)
+- `response`: Optional response metadata (`status`, `headers`)
+
+All enrichers accept `{ overwrite?: boolean }` — defaults to `false` to preserve user-provided data.
 
 ### Nitro
 
@@ -349,7 +496,39 @@ log.info('checkout', 'User initiated checkout')
 log.error({ action: 'payment', error: 'validation_failed' })
 ```
 
-Client logs output to the browser console with colored tags in development. Use for debugging and development - for production analytics, use dedicated services.
+Client logs output to the browser console with colored tags in development.
+
+#### Client Transport
+
+To send client logs to your server for centralized logging, enable the transport:
+
+```typescript
+// nuxt.config.ts
+export default defineNuxtConfig({
+  modules: ['evlog/nuxt'],
+  evlog: {
+    transport: {
+      enabled: true,  // Send client logs to server
+    },
+  },
+})
+```
+
+When enabled:
+1. Client logs are sent to `/api/_evlog/ingest` via POST
+2. Server enriches with environment context (service, version, etc.)
+3. `evlog:drain` hook is called with `source: 'client'`
+4. External services receive the log
+
+Identify client logs in your drain hook:
+
+```typescript
+nitroApp.hooks.hook('evlog:drain', async (ctx) => {
+  if (ctx.event.source === 'client') {
+    // Handle client logs specifically
+  }
+})
+```
 
 ## Publishing
 

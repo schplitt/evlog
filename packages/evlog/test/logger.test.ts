@@ -60,10 +60,10 @@ describe('initLogger', () => {
 })
 
 describe('log', () => {
-  let consoleSpy: ReturnType<typeof vi.spyOn>
+  let infoSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
-    consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     initLogger({ pretty: false })
@@ -75,8 +75,8 @@ describe('log', () => {
 
   it('logs tagged message with info level', () => {
     log.info('auth', 'User logged in')
-    expect(consoleSpy).toHaveBeenCalled()
-    const [[output]] = consoleSpy.mock.calls
+    expect(infoSpy).toHaveBeenCalled()
+    const [[output]] = infoSpy.mock.calls
     expect(output).toContain('"level":"info"')
     expect(output).toContain('"tag":"auth"')
     expect(output).toContain('"message":"User logged in"')
@@ -84,8 +84,8 @@ describe('log', () => {
 
   it('logs wide event object', () => {
     log.info({ action: 'checkout', items: 3 })
-    expect(consoleSpy).toHaveBeenCalled()
-    const [[output]] = consoleSpy.mock.calls
+    expect(infoSpy).toHaveBeenCalled()
+    const [[output]] = infoSpy.mock.calls
     expect(output).toContain('"action":"checkout"')
     expect(output).toContain('"items":3')
   })
@@ -104,10 +104,10 @@ describe('log', () => {
 })
 
 describe('createRequestLogger', () => {
-  let consoleSpy: ReturnType<typeof vi.spyOn>
+  let infoSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
-    consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
     vi.spyOn(console, 'error').mockImplementation(() => {})
     initLogger({ pretty: false })
   })
@@ -140,7 +140,7 @@ describe('createRequestLogger', () => {
     expect(context.cart).toEqual({ items: 3 })
   })
 
-  it('overwrites existing keys with set()', () => {
+  it('overwrites existing primitive keys with set()', () => {
     const logger = createRequestLogger({})
 
     logger.set({ status: 'pending' })
@@ -148,6 +148,50 @@ describe('createRequestLogger', () => {
 
     const context = logger.getContext()
     expect(context.status).toBe('complete')
+  })
+
+  it('deep merges nested objects with set()', () => {
+    const logger = createRequestLogger({})
+
+    logger.set({ user: { name: 'Alice' } })
+    logger.set({ user: { id: '123' } })
+
+    const context = logger.getContext()
+    expect(context.user).toEqual({ name: 'Alice', id: '123' })
+  })
+
+  it('deep merges multiple levels of nesting', () => {
+    const logger = createRequestLogger({})
+
+    logger.set({ order: { customer: { name: 'Alice' } } })
+    logger.set({ order: { customer: { email: 'alice@example.com' } } })
+    logger.set({ order: { total: 99.99 } })
+
+    const context = logger.getContext()
+    expect(context.order).toEqual({
+      customer: { name: 'Alice', email: 'alice@example.com' },
+      total: 99.99,
+    })
+  })
+
+  it('new values override existing values in nested objects', () => {
+    const logger = createRequestLogger({})
+
+    logger.set({ user: { status: 'pending' } })
+    logger.set({ user: { status: 'active' } })
+
+    const context = logger.getContext()
+    expect(context.user).toEqual({ status: 'active' })
+  })
+
+  it('handles arrays in nested objects', () => {
+    const logger = createRequestLogger({})
+
+    logger.set({ cart: { items: ['item1'] } })
+    logger.set({ cart: { total: 50 } })
+
+    const context = logger.getContext()
+    expect(context.cart).toEqual({ items: ['item1'], total: 50 })
   })
 
   it('records error with error()', () => {
@@ -177,6 +221,25 @@ describe('createRequestLogger', () => {
     })
   })
 
+  it('deep merges errorContext with nested objects after set()', () => {
+    const logger = createRequestLogger({})
+
+    logger.set({ order: { id: '123', status: 'pending' } })
+    logger.error(new Error('Payment failed'), { order: { payment: { method: 'card' } } })
+
+    const context = logger.getContext()
+    expect(context.order).toEqual({
+      id: '123',
+      status: 'pending',
+      payment: { method: 'card' },
+    })
+    expect(context.error).toEqual({
+      name: 'Error',
+      message: 'Payment failed',
+      stack: expect.any(String),
+    })
+  })
+
   it('emits wide event on emit()', () => {
     const logger = createRequestLogger({
       method: 'GET',
@@ -186,8 +249,8 @@ describe('createRequestLogger', () => {
     logger.set({ user: { id: '123' } })
     logger.emit()
 
-    expect(consoleSpy).toHaveBeenCalled()
-    const [[output]] = consoleSpy.mock.calls
+    expect(infoSpy).toHaveBeenCalled()
+    const [[output]] = infoSpy.mock.calls
     expect(output).toContain('"level":"info"')
     expect(output).toContain('"method":"GET"')
     expect(output).toContain('"path":"/api/test"')
@@ -212,7 +275,7 @@ describe('createRequestLogger', () => {
     await new Promise(resolve => setTimeout(resolve, 50))
     logger.emit()
 
-    const [[output]] = consoleSpy.mock.calls
+    const [[output]] = infoSpy.mock.calls
     expect(output).toMatch(/"duration":"[0-9]+ms"/)
   })
 
@@ -221,7 +284,7 @@ describe('createRequestLogger', () => {
     logger.set({ original: true })
     logger.emit({ override: true })
 
-    const [[output]] = consoleSpy.mock.calls
+    const [[output]] = infoSpy.mock.calls
     expect(output).toContain('"original":true')
     expect(output).toContain('"override":true')
   })
@@ -276,12 +339,12 @@ describe('createRequestLogger', () => {
 })
 
 describe('sampling', () => {
-  let consoleSpy: ReturnType<typeof vi.spyOn>
+  let infoSpy: ReturnType<typeof vi.spyOn>
   let errorSpy: ReturnType<typeof vi.spyOn>
   let warnSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
-    consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
   })
@@ -297,7 +360,7 @@ describe('sampling', () => {
     log.warn('test', 'warn message')
     log.error('test', 'error message')
 
-    expect(consoleSpy).toHaveBeenCalledTimes(1)
+    expect(infoSpy).toHaveBeenCalledTimes(1)
     expect(warnSpy).toHaveBeenCalledTimes(1)
     expect(errorSpy).toHaveBeenCalledTimes(1)
   })
@@ -314,7 +377,7 @@ describe('sampling', () => {
     log.warn('test', 'warn message')
     log.error('test', 'error message')
 
-    expect(consoleSpy).toHaveBeenCalledTimes(1)
+    expect(infoSpy).toHaveBeenCalledTimes(1)
     expect(warnSpy).toHaveBeenCalledTimes(1)
     expect(errorSpy).toHaveBeenCalledTimes(1)
   })
@@ -332,7 +395,7 @@ describe('sampling', () => {
     log.debug('test', 'debug message')
     log.error('test', 'error message')
 
-    expect(consoleSpy).toHaveBeenCalledTimes(0)
+    expect(infoSpy).toHaveBeenCalledTimes(0)
     expect(warnSpy).toHaveBeenCalledTimes(0)
     expect(errorSpy).toHaveBeenCalledTimes(0)
   })
@@ -349,7 +412,7 @@ describe('sampling', () => {
     log.warn('test', 'warn message')
     log.error('test', 'error message')
 
-    expect(consoleSpy).toHaveBeenCalledTimes(0)
+    expect(infoSpy).toHaveBeenCalledTimes(0)
     expect(warnSpy).toHaveBeenCalledTimes(0)
     expect(errorSpy).toHaveBeenCalledTimes(1)
   })
@@ -365,7 +428,7 @@ describe('sampling', () => {
     const logger = createRequestLogger({ method: 'GET', path: '/test' })
     logger.emit()
 
-    expect(consoleSpy).toHaveBeenCalledTimes(0)
+    expect(infoSpy).toHaveBeenCalledTimes(0)
   })
 
   it('respects error rate for request logger with errors', () => {
@@ -397,17 +460,19 @@ describe('sampling', () => {
     // Simulate random returning 0.3 (30%) - should log (30 < 50)
     randomSpy.mockReturnValueOnce(0.3)
     log.info('test', 'should log')
-    expect(consoleSpy).toHaveBeenCalledTimes(1)
+    expect(infoSpy).toHaveBeenCalledTimes(1)
 
     // Simulate random returning 0.7 (70%) - should not log (70 >= 50)
     randomSpy.mockReturnValueOnce(0.7)
     log.info('test', 'should not log')
-    expect(consoleSpy).toHaveBeenCalledTimes(1) // Still 1, not logged
+    expect(infoSpy).toHaveBeenCalledTimes(1) // Still 1, not logged
 
     randomSpy.mockRestore()
   })
 
   it('applies sampling to tagged logs in pretty mode', () => {
+    // Pretty mode uses console.log for formatted output
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     initLogger({
       pretty: true,
       sampling: {
@@ -416,10 +481,12 @@ describe('sampling', () => {
     })
 
     log.info('test', 'should not log')
-    expect(consoleSpy).toHaveBeenCalledTimes(0)
+    expect(logSpy).toHaveBeenCalledTimes(0)
   })
 
   it('logs tagged messages in pretty mode when sampling rate is 100%', () => {
+    // Pretty mode uses console.log for formatted output
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     initLogger({
       pretty: true,
       sampling: {
@@ -428,16 +495,16 @@ describe('sampling', () => {
     })
 
     log.info('test', 'should log')
-    expect(consoleSpy).toHaveBeenCalledTimes(1)
+    expect(logSpy).toHaveBeenCalledTimes(1)
   })
 })
 
 describe('tail sampling', () => {
-  let consoleSpy: ReturnType<typeof vi.spyOn>
+  let infoSpy: ReturnType<typeof vi.spyOn>
   let errorSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
-    consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
   })
 
@@ -458,7 +525,7 @@ describe('tail sampling', () => {
     logger.set({ status: 500 }) // Error status
     logger.emit()
 
-    expect(consoleSpy).toHaveBeenCalledTimes(1)
+    expect(infoSpy).toHaveBeenCalledTimes(1)
   })
 
   it('does not keep logs when status is below threshold', () => {
@@ -474,7 +541,7 @@ describe('tail sampling', () => {
     logger.set({ status: 200 }) // Success status
     logger.emit()
 
-    expect(consoleSpy).toHaveBeenCalledTimes(0)
+    expect(infoSpy).toHaveBeenCalledTimes(0)
   })
 
   it('keeps logs when duration meets threshold', async () => {
@@ -490,7 +557,7 @@ describe('tail sampling', () => {
     await new Promise(resolve => setTimeout(resolve, 60)) // Wait longer than threshold
     logger.emit()
 
-    expect(consoleSpy).toHaveBeenCalledTimes(1)
+    expect(infoSpy).toHaveBeenCalledTimes(1)
   })
 
   it('does not keep logs when duration is below threshold', () => {
@@ -506,7 +573,7 @@ describe('tail sampling', () => {
     // Emit immediately (duration < 1000ms)
     logger.emit()
 
-    expect(consoleSpy).toHaveBeenCalledTimes(0)
+    expect(infoSpy).toHaveBeenCalledTimes(0)
   })
 
   it('keeps logs when path matches pattern', () => {
@@ -521,7 +588,7 @@ describe('tail sampling', () => {
     const logger = createRequestLogger({ method: 'GET', path: '/api/critical/checkout' })
     logger.emit()
 
-    expect(consoleSpy).toHaveBeenCalledTimes(1)
+    expect(infoSpy).toHaveBeenCalledTimes(1)
   })
 
   it('does not keep logs when path does not match pattern', () => {
@@ -536,7 +603,7 @@ describe('tail sampling', () => {
     const logger = createRequestLogger({ method: 'GET', path: '/api/normal/users' })
     logger.emit()
 
-    expect(consoleSpy).toHaveBeenCalledTimes(0)
+    expect(infoSpy).toHaveBeenCalledTimes(0)
   })
 
   it('uses OR logic for multiple conditions', () => {
@@ -555,14 +622,14 @@ describe('tail sampling', () => {
     const logger1 = createRequestLogger({ method: 'GET', path: '/api/critical/test' })
     logger1.set({ status: 200 })
     logger1.emit()
-    expect(consoleSpy).toHaveBeenCalledTimes(1)
+    expect(infoSpy).toHaveBeenCalledTimes(1)
 
     // Only status matches, path doesn't
-    consoleSpy.mockClear()
+    infoSpy.mockClear()
     const logger2 = createRequestLogger({ method: 'GET', path: '/api/normal' })
     logger2.set({ status: 500 })
     logger2.emit()
-    expect(consoleSpy).toHaveBeenCalledTimes(1)
+    expect(infoSpy).toHaveBeenCalledTimes(1)
   })
 
   it('force keeps logs via _forceKeep override', () => {
@@ -577,7 +644,7 @@ describe('tail sampling', () => {
     const logger = createRequestLogger({ method: 'GET', path: '/test' })
     logger.emit({ _forceKeep: true })
 
-    expect(consoleSpy).toHaveBeenCalledTimes(1)
+    expect(infoSpy).toHaveBeenCalledTimes(1)
   })
 
   it('head sampling still works when no tail conditions match', () => {
@@ -594,7 +661,7 @@ describe('tail sampling', () => {
     logger.emit()
 
     // Should be logged because head sampling rate is 100%
-    expect(consoleSpy).toHaveBeenCalledTimes(1)
+    expect(infoSpy).toHaveBeenCalledTimes(1)
   })
 
   it('combines head and tail sampling correctly', () => {
@@ -614,14 +681,14 @@ describe('tail sampling', () => {
     const logger1 = createRequestLogger({ method: 'GET', path: '/test' })
     logger1.set({ status: 400 })
     logger1.emit()
-    expect(consoleSpy).toHaveBeenCalledTimes(1) // Kept by tail sampling
+    expect(infoSpy).toHaveBeenCalledTimes(1) // Kept by tail sampling
 
     // Random returns 0.9 (would fail 50% head sampling), status is 200
-    consoleSpy.mockClear()
+    infoSpy.mockClear()
     const logger2 = createRequestLogger({ method: 'GET', path: '/test' })
     logger2.set({ status: 200 })
     logger2.emit()
-    expect(consoleSpy).toHaveBeenCalledTimes(0) // Dropped by head sampling
+    expect(infoSpy).toHaveBeenCalledTimes(0) // Dropped by head sampling
 
     randomSpy.mockRestore()
   })

@@ -1,10 +1,10 @@
 ---
-name: Review logging patterns
-description: Review code for logging patterns and suggest evlog adoption. Detects console.log spam, unstructured errors, and missing context. Guides wide event design, structured error handling, and request-scoped logging.
+name: review-logging-patterns
+description: Review code for logging patterns and suggest evlog adoption. Detects console.log spam, unstructured errors, and missing context. Guides wide event design, structured error handling, request-scoped logging, and log draining with adapters (Axiom, OTLP).
 license: MIT
 metadata:
   author: HugoRCD
-  version: "0.2"
+  version: "0.3"
 ---
 
 # Review logging patterns
@@ -30,11 +30,13 @@ Review and improve logging patterns in TypeScript/JavaScript codebases. Transfor
 
 ## Quick Reference
 
-| Working on...           | Load file                                                          |
+| Working on...           | Resource                                                           |
 | ----------------------- | ------------------------------------------------------------------ |
 | Wide events patterns    | [references/wide-events.md](references/wide-events.md)             |
 | Error handling          | [references/structured-errors.md](references/structured-errors.md) |
 | Code review checklist   | [references/code-review.md](references/code-review.md)             |
+| Log draining & adapters | See "Log Draining & Adapters" section below                        |
+| Drain pipeline          | [references/drain-pipeline.md](references/drain-pipeline.md)       |
 
 ## Important: Auto-imports in Nuxt
 
@@ -204,6 +206,10 @@ export default defineNuxtConfig({
     },
     // Optional: only log specific routes (supports glob patterns)
     include: ['/api/**'],
+    // Optional: send client logs to server (default: false)
+    transport: {
+      enabled: true,
+    },
   },
 })
 ```
@@ -301,7 +307,138 @@ log.warn('form', 'Invalid email format')
 log.debug({ component: 'CartDrawer', itemCount: 3 })
 ```
 
-Client logs output to the browser console with colored tags in development. Use for debugging - for production analytics, recommend dedicated services.
+Client logs output to the browser console with colored tags in development.
+
+### Client Transport
+
+To send client logs to the server for centralized logging, enable the transport:
+
+```typescript
+// nuxt.config.ts
+export default defineNuxtConfig({
+  modules: ['evlog/nuxt'],
+  evlog: {
+    transport: {
+      enabled: true,  // Send client logs to server
+    },
+  },
+})
+```
+
+When enabled:
+1. Client logs are sent to `/api/_evlog/ingest` via POST
+2. Server enriches with environment context (service, version, etc.)
+3. `evlog:drain` hook is called with `source: 'client'`
+4. External services receive the log
+
+Identify client logs in your drain hook:
+
+```typescript
+nitroApp.hooks.hook('evlog:drain', async (ctx) => {
+  if (ctx.event.source === 'client') {
+    // Handle client logs specifically
+  }
+})
+```
+
+## Log Draining & Adapters
+
+evlog provides built-in adapters to send logs to external observability platforms.
+
+### Built-in Adapters
+
+| Adapter | Import | Use Case |
+|---------|--------|----------|
+| Axiom | `evlog/axiom` | Axiom datasets for querying and dashboards |
+| OTLP | `evlog/otlp` | OpenTelemetry for Grafana, Datadog, Honeycomb, etc. |
+
+### Quick Setup
+
+**Axiom:**
+
+```typescript
+// server/plugins/evlog-drain.ts
+import { createAxiomDrain } from 'evlog/axiom'
+
+export default defineNitroPlugin((nitroApp) => {
+  nitroApp.hooks.hook('evlog:drain', createAxiomDrain())
+})
+```
+
+Set `NUXT_AXIOM_TOKEN` and `NUXT_AXIOM_DATASET` environment variables.
+
+**OTLP:**
+
+```typescript
+// server/plugins/evlog-drain.ts
+import { createOTLPDrain } from 'evlog/otlp'
+
+export default defineNitroPlugin((nitroApp) => {
+  nitroApp.hooks.hook('evlog:drain', createOTLPDrain())
+})
+```
+
+Set `NUXT_OTLP_ENDPOINT` environment variable.
+
+### Multiple Destinations
+
+```typescript
+import { createAxiomDrain } from 'evlog/axiom'
+import { createOTLPDrain } from 'evlog/otlp'
+
+export default defineNitroPlugin((nitroApp) => {
+  const axiom = createAxiomDrain()
+  const otlp = createOTLPDrain()
+
+  nitroApp.hooks.hook('evlog:drain', async (ctx) => {
+    await Promise.allSettled([axiom(ctx), otlp(ctx)])
+  })
+})
+```
+
+### Custom Adapter
+
+```typescript
+export default defineNitroPlugin((nitroApp) => {
+  nitroApp.hooks.hook('evlog:drain', async (ctx) => {
+    // ctx.event contains the full wide event
+    await fetch('https://your-service.com/logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ctx.event),
+    })
+  })
+})
+```
+
+### Drain Pipeline (Production)
+
+For production use, wrap any adapter with `createDrainPipeline` to get batching, retry with backoff, and buffer overflow protection. Without a pipeline, each event triggers a separate network call.
+
+```typescript
+import type { DrainContext } from 'evlog'
+import { createDrainPipeline } from 'evlog/pipeline'
+import { createAxiomDrain } from 'evlog/axiom'
+
+export default defineNitroPlugin((nitroApp) => {
+  const pipeline = createDrainPipeline<DrainContext>({
+    batch: { size: 50, intervalMs: 5000 },
+    retry: { maxAttempts: 3, backoff: 'exponential' },
+    onDropped: (events, error) => {
+      console.error(`[evlog] Dropped ${events.length} events:`, error?.message)
+    },
+  })
+
+  const drain = pipeline(createAxiomDrain())
+
+  nitroApp.hooks.hook('evlog:drain', drain)
+  nitroApp.hooks.hook('close', () => drain.flush())
+})
+```
+
+Key options: `batch.size` (default 50), `batch.intervalMs` (default 5000), `retry.maxAttempts` (default 3), `retry.backoff` (`'exponential'` | `'linear'` | `'fixed'`), `maxBufferSize` (default 1000).
+
+See [references/drain-pipeline.md](references/drain-pipeline.md) for full patterns and options.
 
 ## Security: Preventing Sensitive Data Leakage
 
@@ -359,6 +496,9 @@ When reviewing code, check for:
 6. **No frontend error handling** → Catch errors and display toasts with structured data
 7. **Sensitive data in logs** → Check for passwords, tokens, full card numbers, PII
 8. **Client-side logging** → Use `log` API for debugging in Vue components
+9. **Client log centralization** → Enable `transport.enabled: true` to send client logs to server
+10. **Missing log draining** → Set up adapters (`evlog/axiom`, `evlog/otlp`) for production log export
+11. **No drain pipeline** → Wrap adapters with `createDrainPipeline()` for batching, retry, and buffer overflow protection
 
 ## Loading Reference Files
 
@@ -367,5 +507,6 @@ Load reference files based on what you're working on:
 - Designing wide events → [references/wide-events.md](references/wide-events.md)
 - Improving errors → [references/structured-errors.md](references/structured-errors.md)
 - Full code review → [references/code-review.md](references/code-review.md)
+- Drain pipeline setup → [references/drain-pipeline.md](references/drain-pipeline.md)
 
 **DO NOT load all files at once** - load only what's needed for the current task.

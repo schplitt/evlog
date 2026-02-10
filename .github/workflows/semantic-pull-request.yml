@@ -25,6 +25,8 @@ jobs:
             docs
             playground
             module
+            deps
+            repo
           types: |
             breaking
             feat
@@ -34,7 +36,7 @@ jobs:
             docs
             enhancement
             chore
-            performance
+            perf
             style
             test
             refactor

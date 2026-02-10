@@ -1,15 +1,93 @@
 import type { NitroApp } from 'nitropack/types'
 import { defineNitroPlugin, useRuntimeConfig } from 'nitropack/runtime'
+import { getHeaders } from 'h3'
 import { createRequestLogger, initLogger } from '../logger'
-import type { RequestLogger, SamplingConfig, ServerEvent, TailSamplingContext, WideEvent } from '../types'
-import { shouldLog } from '../nitro'
+import type { EnrichContext, RequestLogger, RouteConfig, SamplingConfig, ServerEvent, TailSamplingContext, WideEvent } from '../types'
+import { filterSafeHeaders, matchesPattern } from '../utils'
 
 interface EvlogConfig {
   env?: Record<string, unknown>
   pretty?: boolean
   include?: string[]
   exclude?: string[]
+  routes?: Record<string, RouteConfig>
   sampling?: SamplingConfig
+}
+
+function shouldLog(path: string, include?: string[], exclude?: string[]): boolean {
+  // Check exclusions first (they take precedence)
+  if (exclude && exclude.length > 0) {
+    if (exclude.some(pattern => matchesPattern(path, pattern))) {
+      return false
+    }
+  }
+
+  // If no include patterns, log everything (that wasn't excluded)
+  if (!include || include.length === 0) {
+    return true
+  }
+
+  // Log only if path matches at least one include pattern
+  return include.some(pattern => matchesPattern(path, pattern))
+}
+
+/**
+ * Find the service name for a given path based on route patterns.
+ *
+ * When multiple patterns match the same path, the first matching pattern wins
+ * based on object iteration order. To ensure predictable behavior, order your
+ * route patterns from most specific to most general.
+ *
+ * @param path - The request path to match
+ * @param routes - Route configuration mapping patterns to service names
+ * @returns The service name for the matching route, or undefined if no match
+ *
+ * @example
+ * ```ts
+ * // Good: specific patterns first, general patterns last
+ * routes: {
+ *   '/api/auth/admin/**': { service: 'admin-service' },
+ *   '/api/auth/**': { service: 'auth-service' },
+ *   '/api/**': { service: 'api-service' },
+ * }
+ * ```
+ */
+function getServiceForPath(path: string, routes?: Record<string, RouteConfig>): string | undefined {
+  if (!routes) return undefined
+
+  for (const [pattern, config] of Object.entries(routes)) {
+    if (matchesPattern(path, pattern)) {
+      return config.service
+    }
+  }
+
+  return undefined
+}
+
+function getSafeHeaders(event: ServerEvent): Record<string, string> {
+  const allHeaders = getHeaders(event as Parameters<typeof getHeaders>[0])
+  return filterSafeHeaders(allHeaders)
+}
+
+function getSafeResponseHeaders(event: ServerEvent): Record<string, string> | undefined {
+  const headers: Record<string, string> = {}
+  const nodeRes = event.node?.res as { getHeaders?: () => Record<string, unknown> } | undefined
+
+  if (nodeRes?.getHeaders) {
+    for (const [key, value] of Object.entries(nodeRes.getHeaders())) {
+      if (value === undefined) continue
+      headers[key] = Array.isArray(value) ? value.join(', ') : String(value)
+    }
+  }
+
+  if (event.response?.headers) {
+    event.response.headers.forEach((value, key) => {
+      headers[key] = value
+    })
+  }
+
+  if (Object.keys(headers).length === 0) return undefined
+  return filterSafeHeaders(headers)
 }
 
 function getResponseStatus(event: ServerEvent): number {
@@ -31,15 +109,59 @@ function getResponseStatus(event: ServerEvent): number {
   return 200
 }
 
-function callDrainHook(nitroApp: NitroApp, emittedEvent: WideEvent | null, event: ServerEvent): void {
-  if (emittedEvent) {
-    nitroApp.hooks.callHook('evlog:drain', {
-      event: emittedEvent,
-      request: { method: event.method, path: event.path, requestId: event.context.requestId as string | undefined },
-    }).catch((err) => {
-      console.error('[evlog] drain failed:', err)
-    })
+function buildHookContext(event: ServerEvent): Omit<EnrichContext, 'event'> {
+  const responseHeaders = getSafeResponseHeaders(event)
+  return {
+    request: { method: event.method, path: event.path },
+    headers: getSafeHeaders(event),
+    response: {
+      status: getResponseStatus(event),
+      headers: responseHeaders,
+    },
   }
+}
+
+function callDrainHook(
+  nitroApp: NitroApp,
+  emittedEvent: WideEvent | null,
+  event: ServerEvent,
+  request: EnrichContext['request'],
+  headers: EnrichContext['headers'],
+): void {
+  if (!emittedEvent) return
+
+  const drainPromise = nitroApp.hooks.callHook('evlog:drain', {
+    event: emittedEvent,
+    request,
+    headers,
+  }).catch((err) => {
+    console.error('[evlog] drain failed:', err)
+  })
+
+  // Use waitUntil if available (Cloudflare Workers, Vercel Edge)
+  // This ensures drains complete before the runtime terminates
+  const waitUntilCtx = event.context.cloudflare?.context ?? event.context
+  if (typeof waitUntilCtx?.waitUntil === 'function') {
+    waitUntilCtx.waitUntil(drainPromise)
+  }
+}
+
+async function callEnrichAndDrain(
+  nitroApp: NitroApp,
+  emittedEvent: WideEvent | null,
+  event: ServerEvent,
+): Promise<void> {
+  if (!emittedEvent) return
+
+  const hookContext = buildHookContext(event)
+
+  try {
+    await nitroApp.hooks.callHook('evlog:enrich', { event: emittedEvent, ...hookContext })
+  } catch (err) {
+    console.error('[evlog] enrich failed:', err)
+  }
+
+  callDrainHook(nitroApp, emittedEvent, event, hookContext.request, hookContext.headers)
 }
 
 export default defineNitroPlugin((nitroApp) => {
@@ -63,11 +185,24 @@ export default defineNitroPlugin((nitroApp) => {
     // Store start time for duration calculation in tail sampling
     e.context._evlogStartTime = Date.now()
 
+    let requestIdOverride: string | undefined = undefined
+    if (globalThis.navigator?.userAgent === 'Cloudflare-Workers') {
+      const cfRay = getSafeHeaders(e)?.['cf-ray']
+      if (cfRay) requestIdOverride = cfRay
+    }
+
     const log = createRequestLogger({
       method: e.method,
       path: e.path,
-      requestId: e.context.requestId || crypto.randomUUID(),
+      requestId: requestIdOverride || e.context.requestId || crypto.randomUUID(),
     })
+
+    // Apply route-based service configuration if a matching route is found
+    const routeService = getServiceForPath(e.path, evlogConfig?.routes)
+    if (routeService) {
+      log.set({ service: routeService })
+    }
+
     e.context.log = log
   })
 
@@ -102,7 +237,7 @@ export default defineNitroPlugin((nitroApp) => {
       e.context._evlogEmitted = true
 
       const emittedEvent = log.emit({ _forceKeep: tailCtx.shouldKeep })
-      callDrainHook(nitroApp, emittedEvent, e)
+      await callEnrichAndDrain(nitroApp, emittedEvent, e)
     }
   })
 
@@ -131,7 +266,7 @@ export default defineNitroPlugin((nitroApp) => {
       await nitroApp.hooks.callHook('evlog:emit:keep', tailCtx)
 
       const emittedEvent = log.emit({ _forceKeep: tailCtx.shouldKeep })
-      callDrainHook(nitroApp, emittedEvent, e)
+      await callEnrichAndDrain(nitroApp, emittedEvent, e)
     }
   })
 })

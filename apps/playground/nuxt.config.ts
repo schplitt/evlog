@@ -11,8 +11,15 @@ export default defineNuxtConfig({
     env: {
       service: 'playground',
     },
+    transport: {
+      enabled: true,
+    },
+    routes: {
+      '/api/auth/**': { service: 'auth-service' },
+      '/api/payment/**': { service: 'payment-service' },
+      '/api/booking/**': { service: 'booking-service' },
+    },
     sampling: {
-      // Head sampling: only 10% of info logs
       rates: {
         info: 10,
       },
@@ -21,6 +28,7 @@ export default defineNuxtConfig({
         { status: 400 }, // Keep errors
         { duration: 500 }, // Keep slow requests (>500ms)
         { path: '/api/test/critical/**' }, // Keep critical paths
+        { path: '/api/test/drain' }, // Always keep drain test logs
       ],
     },
   },

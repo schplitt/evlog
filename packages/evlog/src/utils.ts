@@ -16,17 +16,21 @@ export function isClient(): boolean {
 }
 
 export function isDev(): boolean {
-  if (typeof process !== 'undefined' && process.env.NODE_ENV) {
+  if (typeof process !== 'undefined') {
     return process.env.NODE_ENV !== 'production'
   }
-  return true
+  if (typeof window !== 'undefined') {
+    return true
+  }
+  return false
 }
 
 export function detectEnvironment(): Partial<EnvironmentContext> {
   const env = typeof process !== 'undefined' ? process.env : {}
+  const defaultEnvironment = isDev() ? 'development' : 'production'
 
   return {
-    environment: env.NODE_ENV || 'development',
+    environment: env.NODE_ENV || defaultEnvironment,
     service: env.SERVICE_NAME || 'app',
     version: env.APP_VERSION,
     commitHash: env.COMMIT_SHA
@@ -40,8 +44,8 @@ export function detectEnvironment(): Partial<EnvironmentContext> {
   }
 }
 
-export function getConsoleMethod(level: LogLevel): 'log' | 'error' | 'warn' {
-  return level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'
+export function getConsoleMethod(level: LogLevel): LogLevel {
+  return level
 }
 
 export const colors = {
@@ -71,6 +75,28 @@ export function getLevelColor(level: string): string {
     default:
       return colors.white
   }
+}
+
+/** Headers that should never be passed to hooks for security */
+export const SENSITIVE_HEADERS = [
+  'authorization',
+  'cookie',
+  'set-cookie',
+  'x-api-key',
+  'x-auth-token',
+  'proxy-authorization',
+]
+
+export function filterSafeHeaders(headers: Record<string, string>): Record<string, string> {
+  const safeHeaders: Record<string, string> = {}
+
+  for (const [key, value] of Object.entries(headers)) {
+    if (!SENSITIVE_HEADERS.includes(key.toLowerCase())) {
+      safeHeaders[key] = value
+    }
+  }
+
+  return safeHeaders
 }
 
 /**

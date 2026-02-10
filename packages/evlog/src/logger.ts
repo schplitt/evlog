@@ -1,6 +1,24 @@
 import type { EnvironmentContext, Log, LogLevel, LoggerConfig, RequestLogger, RequestLoggerOptions, SamplingConfig, TailSamplingContext, WideEvent } from './types'
 import { colors, detectEnvironment, formatDuration, getConsoleMethod, getLevelColor, isDev, matchesPattern } from './utils'
 
+function isPlainObject(val: unknown): val is Record<string, unknown> {
+  return val !== null && typeof val === 'object' && !Array.isArray(val)
+}
+
+function deepDefaults(base: Record<string, unknown>, defaults: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...base }
+  for (const key in defaults) {
+    const baseVal = result[key]
+    const defaultVal = defaults[key]
+    if (baseVal === undefined || baseVal === null) {
+      result[key] = defaultVal
+    } else if (isPlainObject(baseVal) && isPlainObject(defaultVal)) {
+      result[key] = deepDefaults(baseVal, defaultVal)
+    }
+  }
+  return result
+}
+
 let globalEnv: EnvironmentContext = {
   service: 'app',
   environment: 'development',
@@ -8,6 +26,7 @@ let globalEnv: EnvironmentContext = {
 
 let globalPretty = isDev()
 let globalSampling: SamplingConfig = {}
+let globalStringify = true
 
 /**
  * Initialize the logger with configuration.
@@ -26,6 +45,7 @@ export function initLogger(config: LoggerConfig = {}): void {
 
   globalPretty = config.pretty ?? isDev()
   globalSampling = config.sampling ?? {}
+  globalStringify = config.stringify ?? true
 }
 
 /**
@@ -86,8 +106,10 @@ function emitWideEvent(level: LogLevel, event: Record<string, unknown>, skipSamp
 
   if (globalPretty) {
     prettyPrintWideEvent(formatted)
-  } else {
+  } else if (globalStringify) {
     console[getConsoleMethod(level)](JSON.stringify(formatted))
+  } else {
+    console[getConsoleMethod(level)](formatted)
   }
 
   return formatted
@@ -101,9 +123,9 @@ function emitTaggedLog(level: LogLevel, tag: string, message: string): void {
     const color = getLevelColor(level)
     const timestamp = new Date().toISOString().slice(11, 23)
     console.log(`${colors.dim}${timestamp}${colors.reset} ${color}[${tag}]${colors.reset} ${message}`)
-  } else {
-    emitWideEvent(level, { tag, message })
+    return
   }
+  emitWideEvent(level, { tag, message })
 }
 
 function formatValue(value: unknown): string {
@@ -216,15 +238,14 @@ export function createRequestLogger(options: RequestLoggerOptions = {}): Request
 
   return {
     set<T extends Record<string, unknown>>(data: T): void {
-      context = { ...context, ...data }
+      context = deepDefaults(data, context) as Record<string, unknown>
     },
 
     error(error: Error | string, errorContext?: Record<string, unknown>): void {
       hasError = true
       const err = typeof error === 'string' ? new Error(error) : error
 
-      context = {
-        ...context,
+      const errorData = {
         ...errorContext,
         error: {
           name: err.name,
@@ -232,6 +253,7 @@ export function createRequestLogger(options: RequestLoggerOptions = {}): Request
           stack: err.stack,
         },
       }
+      context = deepDefaults(errorData, context) as Record<string, unknown>
     },
 
     emit(overrides?: Record<string, unknown> & { _forceKeep?: boolean }): WideEvent | null {

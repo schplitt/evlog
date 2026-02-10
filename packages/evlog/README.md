@@ -3,8 +3,9 @@
 [![npm version](https://img.shields.io/npm/v/evlog?color=black)](https://npmjs.com/package/evlog)
 [![npm downloads](https://img.shields.io/npm/dm/evlog?color=black)](https://npm.chart.dev/evlog)
 [![CI](https://img.shields.io/github/actions/workflow/status/HugoRCD/evlog/ci.yml?branch=main&color=black)](https://github.com/HugoRCD/evlog/actions/workflows/ci.yml)
-[![bundle size](https://img.shields.io/bundlephobia/minzip/evlog?color=black&label=size)](https://bundlephobia.com/package/evlog)
+[![TypeScript](https://img.shields.io/badge/TypeScript-black?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Nuxt](https://img.shields.io/badge/Nuxt-black?logo=nuxt&logoColor=white)](https://nuxt.com/)
+[![Documentation](https://img.shields.io/badge/Documentation-black?logo=readme&logoColor=white)](https://evlog.dev)
 [![license](https://img.shields.io/github/license/HugoRCD/evlog?color=black)](https://github.com/HugoRCD/evlog/blob/main/LICENSE)
 
 **Your logs are lying to you.**
@@ -346,6 +347,240 @@ async function processSyncJob(job: Job) {
 }
 ```
 
+## Cloudflare Workers
+
+Use the Workers adapter for structured logs and correct platform severity.
+
+```typescript
+// src/index.ts
+import { initWorkersLogger, createWorkersLogger } from 'evlog/workers'
+
+initWorkersLogger({
+  env: { service: 'edge-api' },
+})
+
+export default {
+  async fetch(request: Request) {
+    const log = createWorkersLogger(request)
+
+    try {
+      log.set({ route: 'health' })
+      const response = new Response('ok', { status: 200 })
+      log.emit({ status: response.status })
+      return response
+    } catch (error) {
+      log.error(error as Error)
+      log.emit({ status: 500 })
+      throw error
+    }
+  },
+}
+```
+
+Disable invocation logs to avoid duplicate request logs:
+
+```toml
+# wrangler.toml
+[observability.logs]
+invocation_logs = false
+```
+
+Notes:
+- `requestId` defaults to `cf-ray` when available
+- `request.cf` is included (colo, country, asn) unless disabled
+- Use `headerAllowlist` to avoid logging sensitive headers
+
+## Enrichment Hook
+
+Use the `evlog:enrich` hook to add derived context after emit, before drain.
+
+```typescript
+// server/plugins/evlog-enrich.ts
+export default defineNitroPlugin((nitroApp) => {
+  nitroApp.hooks.hook('evlog:enrich', (ctx) => {
+    ctx.event.deploymentId = process.env.DEPLOYMENT_ID
+  })
+})
+```
+
+### Built-in Enrichers
+
+```typescript
+// server/plugins/evlog-enrich.ts
+import {
+  createGeoEnricher,
+  createRequestSizeEnricher,
+  createTraceContextEnricher,
+  createUserAgentEnricher,
+} from 'evlog/enrichers'
+
+export default defineNitroPlugin((nitroApp) => {
+  const enrich = [
+    createUserAgentEnricher(),
+    createGeoEnricher(),
+    createRequestSizeEnricher(),
+    createTraceContextEnricher(),
+  ]
+
+  nitroApp.hooks.hook('evlog:enrich', (ctx) => {
+    for (const enricher of enrich) enricher(ctx)
+  })
+})
+```
+
+## Adapters
+
+Send your logs to external observability platforms with built-in adapters.
+
+### Axiom
+
+```typescript
+// server/plugins/evlog-drain.ts
+import { createAxiomDrain } from 'evlog/axiom'
+
+export default defineNitroPlugin((nitroApp) => {
+  nitroApp.hooks.hook('evlog:drain', createAxiomDrain())
+})
+```
+
+Set environment variables:
+
+```bash
+NUXT_AXIOM_TOKEN=xaat-your-token
+NUXT_AXIOM_DATASET=your-dataset
+```
+
+### OTLP (OpenTelemetry)
+
+Works with Grafana, Datadog, Honeycomb, and any OTLP-compatible backend.
+
+```typescript
+// server/plugins/evlog-drain.ts
+import { createOTLPDrain } from 'evlog/otlp'
+
+export default defineNitroPlugin((nitroApp) => {
+  nitroApp.hooks.hook('evlog:drain', createOTLPDrain())
+})
+```
+
+Set environment variables:
+
+```bash
+NUXT_OTLP_ENDPOINT=http://localhost:4318
+```
+
+### Sentry
+
+```typescript
+// server/plugins/evlog-drain.ts
+import { createSentryDrain } from 'evlog/sentry'
+
+export default defineNitroPlugin((nitroApp) => {
+  nitroApp.hooks.hook('evlog:drain', createSentryDrain())
+})
+```
+
+Set environment variables:
+
+```bash
+NUXT_SENTRY_DSN=https://public@o0.ingest.sentry.io/123
+```
+
+### Multiple Destinations
+
+Send logs to multiple services:
+
+```typescript
+// server/plugins/evlog-drain.ts
+import { createAxiomDrain } from 'evlog/axiom'
+import { createOTLPDrain } from 'evlog/otlp'
+
+export default defineNitroPlugin((nitroApp) => {
+  const axiom = createAxiomDrain()
+  const otlp = createOTLPDrain()
+
+  nitroApp.hooks.hook('evlog:drain', async (ctx) => {
+    await Promise.allSettled([axiom(ctx), otlp(ctx)])
+  })
+})
+```
+
+### Custom Adapters
+
+Build your own adapter for any destination:
+
+```typescript
+// server/plugins/evlog-drain.ts
+export default defineNitroPlugin((nitroApp) => {
+  nitroApp.hooks.hook('evlog:drain', async (ctx) => {
+    await fetch('https://your-service.com/logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ctx.event),
+    })
+  })
+})
+```
+
+> See the [full documentation](https://evlog.hrcd.fr/adapters/overview) for adapter configuration options, troubleshooting, and advanced patterns.
+
+## Drain Pipeline
+
+For production use, wrap your drain adapter with `createDrainPipeline` to get **batching**, **retry with backoff**, and **buffer overflow protection**.
+
+Without a pipeline, each event triggers a separate network call. The pipeline buffers events and sends them in batches, reducing overhead and handling transient failures automatically.
+
+```typescript
+// server/plugins/evlog-drain.ts
+import type { DrainContext } from 'evlog'
+import { createDrainPipeline } from 'evlog/pipeline'
+import { createAxiomDrain } from 'evlog/axiom'
+
+export default defineNitroPlugin((nitroApp) => {
+  const pipeline = createDrainPipeline<DrainContext>({
+    batch: { size: 50, intervalMs: 5000 },
+    retry: { maxAttempts: 3, backoff: 'exponential', initialDelayMs: 1000 },
+    onDropped: (events, error) => {
+      console.error(`[evlog] Dropped ${events.length} events:`, error?.message)
+    },
+  })
+
+  const drain = pipeline(createAxiomDrain())
+
+  nitroApp.hooks.hook('evlog:drain', drain)
+  nitroApp.hooks.hook('close', () => drain.flush())
+})
+```
+
+### How it works
+
+1. Events are buffered in memory as they arrive
+2. A batch is flushed when either the **batch size** is reached or the **interval** expires (whichever comes first)
+3. If the drain function fails, the batch is retried with the configured **backoff strategy**
+4. If all retries are exhausted, `onDropped` is called with the lost events
+5. If the buffer exceeds `maxBufferSize`, the oldest events are dropped to prevent memory leaks
+
+### Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `batch.size` | `50` | Maximum events per batch |
+| `batch.intervalMs` | `5000` | Max time (ms) before flushing a partial batch |
+| `retry.maxAttempts` | `3` | Total attempts (including first) |
+| `retry.backoff` | `'exponential'` | `'exponential'` \| `'linear'` \| `'fixed'` |
+| `retry.initialDelayMs` | `1000` | Base delay for first retry |
+| `retry.maxDelayMs` | `30000` | Upper bound for any retry delay |
+| `maxBufferSize` | `1000` | Max buffered events before dropping oldest |
+| `onDropped` | — | Callback when events are dropped |
+
+### Returned drain function
+
+The function returned by `pipeline(drain)` is hook-compatible and exposes:
+
+- **`drain(ctx)`** — Push a single event into the buffer
+- **`drain.flush()`** — Force-flush all buffered events (call on server shutdown)
+- **`drain.pending`** — Number of events currently buffered
+
 ## API Reference
 
 ### `initLogger(config)`
@@ -362,6 +597,7 @@ initLogger({
     region?: string      // Deployment region
   },
   pretty?: boolean       // Pretty print (default: true in dev)
+  stringify?: boolean    // JSON.stringify output (default: true, false for Workers)
   include?: string[]     // Route patterns to log (glob), e.g. ['/api/**']
   sampling?: {
     rates?: {            // Head sampling (random per level)
@@ -477,6 +713,34 @@ log.set({ user: { id: '123' } })  // Add context
 log.error(error, { step: 'x' })   // Log error with context
 log.emit()                         // Emit final event
 log.getContext()                   // Get current context
+```
+
+### `initWorkersLogger(options?)`
+
+Initialize evlog for Cloudflare Workers (object logs + correct severity).
+
+```typescript
+import { initWorkersLogger } from 'evlog/workers'
+
+initWorkersLogger({
+  env: { service: 'edge-api' },
+})
+```
+
+### `createWorkersLogger(request, options?)`
+
+Create a request-scoped logger for Workers. Auto-extracts `cf-ray`, `request.cf`, method, and path.
+
+```typescript
+import { createWorkersLogger } from 'evlog/workers'
+
+const log = createWorkersLogger(request, {
+  requestId: 'custom-id',      // Override cf-ray (default: cf-ray header)
+  headers: ['x-request-id'],   // Headers to include (default: none)
+})
+
+log.set({ user: { id: '123' } })
+log.emit({ status: 200 })
 ```
 
 ### `createError(options)`

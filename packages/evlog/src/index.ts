@@ -6,9 +6,11 @@ export { parseError } from './runtime/utils/parseError'
 export type {
   BaseWideEvent,
   DrainContext,
+  EnrichContext,
   EnvironmentContext,
   ErrorOptions,
   H3EventContext,
+  IngestPayload,
   Log,
   LoggerConfig,
   LogLevel,
@@ -20,5 +22,6 @@ export type {
   ServerEvent,
   TailSamplingCondition,
   TailSamplingContext,
+  TransportConfig,
   WideEvent,
 } from './types'

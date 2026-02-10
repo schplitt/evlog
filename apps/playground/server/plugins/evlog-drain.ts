@@ -1,14 +1,24 @@
-// Example drain hook - demonstrates evlog:drain usage
+// import { createAxiomDrain } from 'evlog/axiom'
+// import { createPostHogDrain } from 'evlog/posthog'
+// import { createSentryDrain } from 'evlog/sentry'
+
 export default defineNitroPlugin((nitroApp) => {
   nitroApp.hooks.hook('evlog:drain', (ctx) => {
-    // Example: log the event to console (replace with your external service)
-    console.log('[DRAIN]', JSON.stringify(ctx.event, null, 2))
+    // console.log('[DRAIN]', JSON.stringify({
+    //   event: ctx.event,
+    //   request: ctx.request,
+    //   headers: ctx.headers,
+    // }, null, 2))
 
-    // Example: send to Axiom (uncomment and configure)
-    // await fetch('https://api.axiom.co/v1/datasets/logs/ingest', {
-    //   method: 'POST',
-    //   headers: { Authorization: `Bearer ${process.env.AXIOM_TOKEN}` },
-    //   body: JSON.stringify([ctx.event])
+    // const axiomDrain = createAxiomDrain({
+    //   dataset: 'evlog',
     // })
+    // axiomDrain(ctx)
+
+    // const posthogDrain = createPostHogDrain()
+    // posthogDrain(ctx)
+
+    // const sentryDrain = createSentryDrain()
+    // sentryDrain(ctx)
   })
 })

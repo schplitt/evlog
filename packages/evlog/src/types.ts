@@ -18,6 +18,19 @@ declare module 'nitropack/types' {
     'evlog:emit:keep': (ctx: TailSamplingContext) => void | Promise<void>
 
     /**
+     * Enrichment hook - called after emit, before drain.
+     * Use this to enrich the event with derived context (e.g. geo, user agent).
+     *
+     * @example
+     * ```ts
+     * nitroApp.hooks.hook('evlog:enrich', (ctx) => {
+     *   ctx.event.deploymentId = process.env.DEPLOYMENT_ID
+     * })
+     * ```
+     */
+    'evlog:enrich': (ctx: EnrichContext) => void | Promise<void>
+
+    /**
      * Drain hook - called after emitting a log (fire-and-forget).
      * Use this to send logs to external services like Axiom, Loki, or custom endpoints.
      * Errors are logged but never block the request.
@@ -35,6 +48,32 @@ declare module 'nitropack/types' {
      */
     'evlog:drain': (ctx: DrainContext) => void | Promise<void>
   }
+}
+
+/**
+ * Transport configuration for sending client logs to the server
+ */
+export interface TransportConfig {
+  /**
+   * Enable sending logs to the server API
+   * @default false
+   */
+  enabled?: boolean
+
+  /**
+   * API endpoint for log ingestion
+   * @default '/api/_evlog/ingest'
+   */
+  endpoint?: string
+}
+
+/**
+ * Payload sent from client to server for log ingestion
+ */
+export interface IngestPayload {
+  timestamp: string
+  level: 'info' | 'error' | 'warn' | 'debug'
+  [key: string]: unknown
 }
 
 /**
@@ -87,6 +126,28 @@ export interface TailSamplingContext {
 }
 
 /**
+ * Context passed to the evlog:enrich hook.
+ * Called after emit, before drain.
+ */
+export interface EnrichContext {
+  /** The emitted wide event (mutable). */
+  event: WideEvent
+  /** Request metadata (if available) */
+  request?: {
+    method?: string
+    path?: string
+    requestId?: string
+  }
+  /** Safe HTTP request headers (sensitive headers filtered out) */
+  headers?: Record<string, string>
+  /** Optional response metadata */
+  response?: {
+    status?: number
+    headers?: Record<string, string>
+  }
+}
+
+/**
  * Context passed to the evlog:drain hook.
  * Contains the complete wide event and request metadata for external transport.
  */
@@ -99,6 +160,8 @@ export interface DrainContext {
     path?: string
     requestId?: string
   }
+  /** HTTP headers from the original request (useful for correlation with external services) */
+  headers?: Record<string, string>
 }
 
 /**
@@ -146,6 +209,14 @@ export interface SamplingConfig {
 }
 
 /**
+ * Route-based service configuration
+ */
+export interface RouteConfig {
+  /** Service name to use for routes matching this pattern */
+  service: string
+}
+
+/**
  * Environment context automatically included in every log event
  */
 export interface EnvironmentContext {
@@ -171,6 +242,12 @@ export interface LoggerConfig {
   pretty?: boolean
   /** Sampling configuration for filtering logs */
   sampling?: SamplingConfig
+  /**
+   * When pretty is disabled, emit JSON strings (default) or raw objects.
+   * Set to false for environments like Cloudflare Workers that expect objects.
+   * @default true
+   */
+  stringify?: boolean
 }
 
 /**
@@ -204,7 +281,7 @@ export type WideEvent = BaseWideEvent & Record<string, unknown>
  */
 export interface RequestLogger {
   /**
-   * Add context to the wide event (shallow merge)
+   * Add context to the wide event (deep merge via defu)
    */
   set: <T extends Record<string, unknown>>(context: T) => void
 
@@ -320,7 +397,16 @@ export interface H3EventContext {
 export interface ServerEvent {
   method: string
   path: string
-  context: H3EventContext
+  context: H3EventContext & {
+    /** Cloudflare Workers context (available when deployed to CF Workers) */
+    cloudflare?: {
+      context: {
+        waitUntil: (promise: Promise<unknown>) => void
+      }
+    }
+    /** Vercel Edge context (available when deployed to Vercel Edge) */
+    waitUntil?: (promise: Promise<unknown>) => void
+  }
   node?: { res?: { statusCode?: number } }
   response?: Response
 }
