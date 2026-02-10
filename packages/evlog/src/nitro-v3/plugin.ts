@@ -4,35 +4,119 @@ import type { CaptureError } from 'nitro/types'
 import type { HTTPEvent } from 'nitro/h3'
 import { parseURL } from 'ufo'
 import { createRequestLogger, initLogger } from '../logger'
-import { shouldLog } from '../nitro'
-import type { RequestLogger, SamplingConfig, TailSamplingContext, WideEvent } from '../types'
-
-export * from './error'
+import { shouldLog, getServiceForPath } from '../nitro'
+import type { EnrichContext, RequestLogger, RouteConfig, SamplingConfig, TailSamplingContext, WideEvent } from '../types'
+import { filterSafeHeaders } from '../utils'
 
 interface EvlogConfig {
   env?: Record<string, unknown>
   pretty?: boolean
   include?: string[]
   exclude?: string[]
+  routes?: Record<string, RouteConfig>
   sampling?: SamplingConfig
 }
 
-// currently nitro/v3 doesnt export hook types correctly
+// Nitro v3 doesn't fully export hook types yet
 // https://github.com/nitrojs/nitro/blob/8882bc9e1dbf2d342e73097f22a2156f70f50575/src/types/runtime/nitro.ts#L48-L53
-interface NitroRuntimeHooks {
-  close: () => void;
-  error: CaptureError;
-  request: (event: HTTPEvent) => void | Promise<void>;
-  response: (res: Response, event: HTTPEvent) => void | Promise<void>;
-  'evlog:emit:keep': (ctx: TailSamplingContext) => void | Promise<void>;
-  'evlog:drain': (ctx: { event: WideEvent; request?: { method?: string; path: string; requestId?: string } }) => void | Promise<void>;
+interface NitroV3Hooks {
+  close: () => void
+  error: CaptureError
+  request: (event: HTTPEvent) => void | Promise<void>
+  response: (res: Response, event: HTTPEvent) => void | Promise<void>
+  'evlog:emit:keep': (ctx: TailSamplingContext) => void | Promise<void>
+  'evlog:enrich': (ctx: EnrichContext) => void | Promise<void>
+  'evlog:drain': (ctx: { event: WideEvent; request?: { method?: string; path: string; requestId?: string }; headers?: Record<string, string> }) => void | Promise<void>
 }
-// Hookable core type not available so we build it our self
+
 type Hooks = {
-    hook: <THookName extends keyof NitroRuntimeHooks>(
-        name: THookName,
-        listener: NitroRuntimeHooks[THookName]
-    ) => void;
+  hook: <T extends keyof NitroV3Hooks>(name: T, listener: NitroV3Hooks[T]) => void
+  callHook: <T extends keyof NitroV3Hooks>(name: T, ...args: Parameters<NitroV3Hooks[T]>) => Promise<void>
+}
+
+function getContext(event: HTTPEvent): Record<string, unknown> {
+  if (!event.req.context) {
+    event.req.context = {}
+  }
+  return event.req.context
+}
+
+function getSafeRequestHeaders(event: HTTPEvent): Record<string, string> {
+  const headers: Record<string, string> = {}
+  event.req.headers.forEach((value, key) => {
+    headers[key] = value
+  })
+  return filterSafeHeaders(headers)
+}
+
+function getSafeResponseHeaders(res: Response): Record<string, string> | undefined {
+  const headers: Record<string, string> = {}
+  res.headers.forEach((value, key) => {
+    headers[key] = value
+  })
+  if (Object.keys(headers).length === 0) return undefined
+  return filterSafeHeaders(headers)
+}
+
+function buildHookContext(
+  event: HTTPEvent,
+  res?: Response,
+): Omit<EnrichContext, 'event'> {
+  const { pathname } = parseURL(event.req.url)
+  const responseHeaders = res ? getSafeResponseHeaders(res) : undefined
+  return {
+    request: { method: event.req.method, path: pathname },
+    headers: getSafeRequestHeaders(event),
+    response: {
+      status: res?.status ?? 200,
+      headers: responseHeaders,
+    },
+  }
+}
+
+function callDrainHook(
+  hooks: Hooks,
+  emittedEvent: WideEvent | null,
+  event: HTTPEvent,
+  request: EnrichContext['request'],
+  headers: EnrichContext['headers'],
+): void {
+  if (!emittedEvent) return
+  let drainPromise: Promise<any> | undefined
+  try {
+    drainPromise = hooks.callHook('evlog:drain', {
+      event: emittedEvent,
+      request,
+      headers,
+    })
+  } catch (err) {
+    console.error('[evlog] drain failed:', err)
+  }
+
+  // Use waitUntil if available (srvx native — Cloudflare Workers, Vercel Edge, etc.)
+  // This ensures drains complete before the runtime terminates
+  if (drainPromise && typeof event.req.waitUntil === 'function') {
+    event.req.waitUntil(drainPromise)
+  }
+}
+
+async function callEnrichAndDrain(
+  hooks: Hooks,
+  emittedEvent: WideEvent | null,
+  event: HTTPEvent,
+  res?: Response,
+): Promise<void> {
+  if (!emittedEvent) return
+
+  const hookContext = buildHookContext(event, res)
+
+  try {
+    await hooks.callHook('evlog:enrich', { event: emittedEvent, ...hookContext })
+  } catch (err) {
+    console.error('[evlog] enrich failed:', err)
+  }
+
+  callDrainHook(hooks, emittedEvent, event, hookContext.request, hookContext.headers)
 }
 
 export default definePlugin((nitroApp) => {
@@ -45,120 +129,113 @@ export default definePlugin((nitroApp) => {
     sampling: evlogConfig?.sampling,
   })
 
-  const hooks = nitroApp.hooks as Hooks
-
+  const hooks = nitroApp.hooks as unknown as Hooks
 
   hooks.hook('request', (event) => {
-    const e = event
+    const { pathname } = parseURL(event.req.url)
 
-    const { method } = e.req
-    const requestId = e.req.context?.requestId as string | undefined ?? crypto.randomUUID()
-
-    const {
-      pathname
-    } = parseURL(e.req.url)
-  
     // Skip logging for routes not matching include/exclude patterns
     if (!shouldLog(pathname, evlogConfig?.include, evlogConfig?.exclude)) {
       return
     }
-  
-    const log = createRequestLogger({
-      method: method,
-      path: pathname,
-      requestId,
-    })
-    if (!e.req.context) {
-      e.req.context = {}
-    }
-    e.req.context.log = log
+
+    const ctx = getContext(event)
+
     // Store start time for duration calculation in tail sampling
-    e.req.context._evlogStartTime = Date.now()
+    ctx._evlogStartTime = Date.now()
+
+    let requestIdOverride: string | undefined = undefined
+    if (globalThis.navigator?.userAgent === 'Cloudflare-Workers') {
+      const cfRay = event.req.headers.get('cf-ray')
+      if (cfRay) requestIdOverride = cfRay
+    }
+
+    const log = createRequestLogger({
+      method: event.req.method,
+      path: pathname,
+      requestId: requestIdOverride || ctx.requestId as string | undefined || crypto.randomUUID(),
+    })
+
+    // Apply route-based service configuration if a matching route is found
+    const routeService = getServiceForPath(pathname, evlogConfig?.routes)
+    if (routeService) {
+      log.set({ service: routeService })
+    }
+
+    ctx.log = log
   })
-  
+
   hooks.hook('response', async (res, event) => {
-    const e = event
+    const ctx = event.req.context
     // Skip if already emitted by error hook
-    if (e.req.context?._evlogEmitted) return
+    if (ctx?._evlogEmitted) return
 
-    const log = e.req.context?.log as RequestLogger | undefined
-    if (log && e.req.context) {
-      const { status } = res
-      log.set({ status })
+    const log = ctx?.log as RequestLogger | undefined
+    if (!log || !ctx) return
 
-      const { pathname } = parseURL(e.req.url)
-      const startTime = e.req.context._evlogStartTime as number | undefined
-      const durationMs = startTime ? Date.now() - startTime : undefined
+    const { status } = res
+    log.set({ status })
 
-      const tailCtx: TailSamplingContext = {
-        status,
-        duration: durationMs,
-        path: pathname,
-        method: e.req.method,
-        context: log.getContext(),
-        shouldKeep: false,
-      }
+    const startTime = ctx._evlogStartTime as number | undefined
+    const durationMs = startTime ? Date.now() - startTime : undefined
 
-      await nitroApp.hooks.callHook('evlog:emit:keep', tailCtx)
+    const { pathname } = parseURL(event.req.url)
 
-      const emittedEvent = log.emit({ _forceKeep: tailCtx.shouldKeep })
-
-      // Drain hook integration
-      if (emittedEvent) {
-        try {
-          await nitroApp.hooks.callHook('evlog:drain', {
-            event: emittedEvent,
-            request: { method: e.req.method, path: pathname, requestId: e.req.context.requestId as string | undefined },
-          })
-        } catch (err) {
-          console.error('[evlog] drain failed:', err)
-        }
-      }
+    const tailCtx: TailSamplingContext = {
+      status,
+      duration: durationMs,
+      path: pathname,
+      method: event.req.method,
+      context: log.getContext(),
+      shouldKeep: false,
     }
+
+    await hooks.callHook('evlog:emit:keep', tailCtx)
+
+    const emittedEvent = log.emit({ _forceKeep: tailCtx.shouldKeep })
+    await callEnrichAndDrain(hooks, emittedEvent, event, res)
   })
-  
+
   hooks.hook('error', async (error, { event }) => {
-    const e = event
-    if (!e) return
+    if (!event) return
+    const e = event as HTTPEvent
 
-    const log = e.req.context?.log as RequestLogger | undefined
-    if (log && e.req.context) {
-      log.error(error as Error)
+    const ctx = e.req.context
+    const log = ctx?.log as RequestLogger | undefined
+    if (!log || !ctx) return
 
-      // Get the actual error status code
-      const errorStatus = (error as { statusCode?: number }).statusCode ?? 500
-      log.set({ status: errorStatus })
+    // Check if error.cause is an EvlogError (thrown errors get wrapped in HTTPError by nitro)
+    const actualError = (error.cause as Error)?.name === 'EvlogError' 
+      ? error.cause as Error 
+      : error as Error
 
-      const { pathname } = parseURL(e.req.url)
-      const startTime = e.req.context._evlogStartTime as number | undefined
-      const durationMs = startTime ? Date.now() - startTime : undefined
+    log.error(actualError)
 
-      const tailCtx: TailSamplingContext = {
-        status: errorStatus,
-        duration: durationMs,
-        path: pathname,
-        method: e.req.method,
-        context: log.getContext(),
-        shouldKeep: false,
-      }
+    // Get the actual error status code (from EvlogError if available)
+    const errorStatus = (actualError as { status?: number }).status
+      ?? (actualError as { statusCode?: number }).statusCode 
+      ?? (error as { statusCode?: number }).statusCode 
+      ?? 500
+    log.set({ status: errorStatus })
 
-      await nitroApp.hooks.callHook('evlog:emit:keep', tailCtx)
+    const { pathname } = parseURL(e.req.url)
+    const startTime = ctx._evlogStartTime as number | undefined
+    const durationMs = startTime ? Date.now() - startTime : undefined
 
-      e.req.context._evlogEmitted = true
-
-      const emittedEvent = log.emit({ _forceKeep: tailCtx.shouldKeep })
-
-      // Drain hook integration
-      if (emittedEvent) {
-        try {
-          await nitroApp.hooks.callHook('evlog:drain', {
-            event: emittedEvent,
-            request: { method: e.req.method, path: pathname, requestId: e.req.context.requestId as string | undefined },
-          })
-        } catch (err) {
-          console.error('[evlog] drain failed:', err)
-        }
-      }
+    const tailCtx: TailSamplingContext = {
+      status: errorStatus,
+      duration: durationMs,
+      path: pathname,
+      method: e.req.method,
+      context: log.getContext(),
+      shouldKeep: false,
     }
+
+    await hooks.callHook('evlog:emit:keep', tailCtx)
+
+    ctx._evlogEmitted = true
+
+    const emittedEvent = log.emit({ _forceKeep: tailCtx.shouldKeep })
+    await callEnrichAndDrain(hooks, emittedEvent, e)
   })
 })
