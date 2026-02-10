@@ -39,6 +39,10 @@
       "types": "./dist/nitro/v3/plugin.d.mts",
       "import": "./dist/nitro/v3/plugin.mjs"
     },
+    "./nitro/v3/errorHandler": {
+      "types": "./dist/nitro/v3/errorHandler.d.mts",
+      "import": "./dist/nitro/v3/errorHandler.mjs"
+    },
     "./workers": {
       "types": "./dist/workers.d.mts",
       "import": "./dist/workers.mjs"
@@ -83,6 +87,9 @@
       ],
       "nitro/v3": [
         "./dist/nitro/v3/plugin.d.mts"
+      ],
+      "nitro/v3/errorHandler": [
+        "./dist/nitro/v3/errorHandler.d.mts"
       ],
       "workers": [
         "./dist/workers.d.mts"
@@ -131,12 +138,13 @@
     "@nuxt/schema": "^4.3.1",
     "@nuxt/test-utils": "^3.23.0",
     "changelogen": "^0.6.2",
+    "consola": "^3.4.2",
     "h3": "^1.15.5",
+    "nitro": "^3.0.1-alpha.2",
     "nitropack": "^2.13.1",
     "nuxt": "^4.3.1",
     "tsdown": "^0.20.3",
-    "typescript": "^5.9.3",
-    "nitro": "^3.0.1-alpha.2"
+    "typescript": "^5.9.3"
   },
   "peerDependencies": {
     "@nuxt/kit": "^4.3.1",
