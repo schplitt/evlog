@@ -37,7 +37,8 @@
   },
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "examples/*"
   ],
   "trustedDependencies": [
     "@parcel/watcher",

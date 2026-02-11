@@ -209,6 +209,44 @@ describe('createRequestLogger', () => {
     expect(context.step).toBe('payment')
   })
 
+  it('captures custom error properties (statusCode, data, cause)', () => {
+    const logger = createRequestLogger({})
+    const error = Object.assign(new Error('Something went wrong'), {
+      statusCode: 500,
+      statusMessage: 'Internal Server Error',
+      data: { code: 'VALIDATION_ERROR', why: 'Invalid input' },
+      cause: new Error('original cause'),
+    })
+
+    logger.error(error)
+
+    const context = logger.getContext()
+    expect(context.error).toEqual({
+      name: 'Error',
+      message: 'Something went wrong',
+      stack: expect.any(String),
+      statusCode: 500,
+      statusMessage: 'Internal Server Error',
+      data: { code: 'VALIDATION_ERROR', why: 'Invalid input' },
+      cause: expect.any(Error),
+    })
+  })
+
+  it('does not include custom properties when absent', () => {
+    const logger = createRequestLogger({})
+    logger.error(new Error('Plain error'))
+
+    const context = logger.getContext()
+    expect(context.error).toEqual({
+      name: 'Error',
+      message: 'Plain error',
+      stack: expect.any(String),
+    })
+    expect(context.error).not.toHaveProperty('statusCode')
+    expect(context.error).not.toHaveProperty('data')
+    expect(context.error).not.toHaveProperty('cause')
+  })
+
   it('accepts string error', () => {
     const logger = createRequestLogger({})
     logger.error('Something went wrong')
@@ -335,6 +373,89 @@ describe('createRequestLogger', () => {
 
     expect(result).toBeNull()
     randomSpy.mockRestore()
+  })
+})
+
+describe('drain callback', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'info').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    initLogger({ pretty: false })
+  })
+
+  it('calls drain with DrainContext on log.info()', async () => {
+    const drain = vi.fn()
+    initLogger({ pretty: false, drain })
+
+    log.info({ action: 'test' })
+    await vi.waitFor(() => expect(drain).toHaveBeenCalledTimes(1))
+
+    const [[ctx]] = drain.mock.calls
+    expect(ctx.event).toBeDefined()
+    expect(ctx.event.level).toBe('info')
+    expect(ctx.event.action).toBe('test')
+  })
+
+  it('calls drain on requestLogger.emit()', async () => {
+    const drain = vi.fn()
+    initLogger({ pretty: false, drain })
+
+    const logger = createRequestLogger({ method: 'POST', path: '/checkout' })
+    logger.set({ userId: '123' })
+    logger.emit()
+
+    await vi.waitFor(() => expect(drain).toHaveBeenCalledTimes(1))
+
+    const [[ctx]] = drain.mock.calls
+    expect(ctx.event.method).toBe('POST')
+    expect(ctx.event.path).toBe('/checkout')
+    expect(ctx.event.userId).toBe('123')
+  })
+
+  it('does not call drain when event is sampled out', () => {
+    const drain = vi.fn()
+    initLogger({
+      pretty: false,
+      drain,
+      sampling: { rates: { info: 0 } },
+    })
+
+    log.info({ action: 'sampled-out' })
+    expect(drain).not.toHaveBeenCalled()
+  })
+
+  it('catches drain errors without throwing', async () => {
+    const errorSpy = vi.spyOn(console, 'error')
+    const drain = vi.fn().mockRejectedValue(new Error('drain error'))
+    initLogger({ pretty: false, drain })
+
+    log.info({ action: 'test' })
+
+    await vi.waitFor(() =>
+      expect(errorSpy).toHaveBeenCalledWith('[evlog] drain failed:', expect.any(Error)),
+    )
+  })
+
+  it('works with async drain functions', async () => {
+    const events: unknown[] = []
+    const drain = vi.fn((ctx: { event: unknown }) => {
+      events.push(ctx.event)
+    })
+    initLogger({ pretty: false, drain })
+
+    log.info({ action: 'async-test' })
+    await vi.waitFor(() => expect(events).toHaveLength(1))
+  })
+
+  it('does not call drain when no drain is configured', () => {
+    initLogger({ pretty: false })
+    // Should not throw
+    log.info({ action: 'no-drain' })
   })
 })
 
@@ -727,5 +848,98 @@ describe('tail sampling', () => {
 
     // Should NOT be logged because head sampling drops it and tail condition doesn't match
     expect(errorSpy).toHaveBeenCalledTimes(0)
+  })
+})
+
+describe('typed fields', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'info').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    initLogger({ pretty: false })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('accepts typed fields via set()', () => {
+    interface MyFields {
+      user: { id: string; plan: string }
+      action: string
+    }
+
+    const logger = createRequestLogger<MyFields>({ method: 'GET', path: '/test' })
+    logger.set({ user: { id: '123', plan: 'pro' } })
+    logger.set({ action: 'checkout' })
+
+    const ctx = logger.getContext()
+    expect(ctx.user).toEqual({ id: '123', plan: 'pro' })
+    expect(ctx.action).toBe('checkout')
+  })
+
+  it('accepts internal fields (status, service) alongside typed fields', () => {
+    interface MyFields {
+      user: { id: string }
+    }
+
+    const logger = createRequestLogger<MyFields>({})
+    logger.set({ user: { id: '123' } })
+    logger.set({ status: 200 })
+    logger.set({ service: 'checkout' })
+
+    const ctx = logger.getContext()
+    expect(ctx.user).toEqual({ id: '123' })
+    expect(ctx.status).toBe(200)
+    expect(ctx.service).toBe('checkout')
+  })
+
+  it('getContext returns typed fields', () => {
+    interface MyFields {
+      action: string
+      count: number
+    }
+
+    const logger = createRequestLogger<MyFields>({})
+    logger.set({ action: 'test', count: 42 })
+
+    const ctx = logger.getContext()
+    expect(ctx.action).toBe('test')
+    expect(ctx.count).toBe(42)
+  })
+
+  it('error() accepts typed context', () => {
+    interface MyFields {
+      order: { id: string }
+    }
+
+    const logger = createRequestLogger<MyFields>({})
+    logger.error(new Error('fail'), { order: { id: 'ord-1' } })
+
+    const ctx = logger.getContext()
+    expect(ctx.order).toEqual({ id: 'ord-1' })
+    expect(ctx.error).toBeDefined()
+  })
+
+  it('emit() accepts typed overrides', () => {
+    const infoSpy = vi.spyOn(console, 'info')
+    interface MyFields {
+      result: string
+    }
+
+    const logger = createRequestLogger<MyFields>({})
+    logger.emit({ result: 'success' })
+
+    expect(infoSpy).toHaveBeenCalled()
+    const [[output]] = infoSpy.mock.calls
+    expect(output).toContain('"result":"success"')
+  })
+
+  it('untyped createRequestLogger still accepts any fields', () => {
+    const logger = createRequestLogger({})
+    logger.set({ anything: true, nested: { deep: 'value' } })
+
+    const ctx = logger.getContext()
+    expect(ctx.anything).toBe(true)
+    expect(ctx.nested).toEqual({ deep: 'value' })
   })
 })
