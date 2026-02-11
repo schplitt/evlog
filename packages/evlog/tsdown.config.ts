@@ -43,7 +43,6 @@ export default defineConfig({
     'nitro/h3',
     'nitro/runtime-config',
     'nitro/types',
-    'ufo',
     'ofetch',
     'h3',
   ],
