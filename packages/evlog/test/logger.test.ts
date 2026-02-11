@@ -209,6 +209,74 @@ describe('createRequestLogger', () => {
     expect(context.step).toBe('payment')
   })
 
+  it('captures info messages in logs array', () => {
+    const logger = createRequestLogger({})
+
+    logger.info('Cache miss, fetching from database')
+
+    const context = logger.getContext()
+    expect(context.logs).toEqual([
+      {
+        level: 'info',
+        message: 'Cache miss, fetching from database',
+        timestamp: expect.any(String),
+      },
+    ])
+  })
+
+  it('captures warning messages in logs array and escalates final level', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const logger = createRequestLogger({})
+
+    logger.warn('Deprecated parameter used')
+    logger.emit()
+
+    const context = logger.getContext()
+    expect(context.logs).toEqual([
+      {
+        level: 'warn',
+        message: 'Deprecated parameter used',
+        timestamp: expect.any(String),
+      },
+    ])
+
+    expect(warnSpy).toHaveBeenCalled()
+    const output = warnSpy.mock.calls[0]?.[0]
+    expect(output).toContain('"level":"warn"')
+  })
+
+  it('preserves chronological request logs and escalates warn over info', () => {
+    const logger = createRequestLogger({})
+
+    logger.info('User authenticated')
+    logger.info('Cache miss')
+    logger.warn('Deprecated parameter used')
+
+    const result = logger.emit()
+
+    expect(result).not.toBeNull()
+    expect(result).toHaveProperty('level', 'warn')
+    expect(result).toHaveProperty('logs')
+    expect(Array.isArray(result?.logs)).toBe(true)
+    expect((result?.logs as Array<Record<string, unknown>>).map(entry => entry.level)).toEqual(['info', 'info', 'warn'])
+    expect((result?.logs as Array<Record<string, unknown>>).map(entry => entry.message)).toEqual([
+      'User authenticated',
+      'Cache miss',
+      'Deprecated parameter used',
+    ])
+  })
+
+  it('merges context passed to info() and warn()', () => {
+    const logger = createRequestLogger({})
+
+    logger.info('Starting request', { user: { id: '123' } })
+    logger.warn('Slow downstream call', { downstream: { service: 'billing' } })
+
+    const context = logger.getContext()
+    expect(context.user).toEqual({ id: '123' })
+    expect(context.downstream).toEqual({ service: 'billing' })
+  })
+
   it('captures custom error properties (statusCode, data, cause)', () => {
     const logger = createRequestLogger({})
     const error = Object.assign(new Error('Something went wrong'), {

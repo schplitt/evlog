@@ -243,6 +243,24 @@ export function createRequestLogger<T extends object = Record<string, unknown>>(
     requestId: options.requestId,
   }
   let hasError = false
+  let hasWarn = false
+
+  function addRequestLog(level: 'info' | 'warn', message: string): void {
+    const entry = {
+      level,
+      message,
+      timestamp: new Date().toISOString(),
+    }
+
+    const logs = Array.isArray(context.logs)
+      ? [...context.logs, entry]
+      : [entry]
+
+    context = {
+      ...context,
+      logs,
+    }
+  }
 
   return {
     set(data: FieldContext<T>): void {
@@ -268,10 +286,25 @@ export function createRequestLogger<T extends object = Record<string, unknown>>(
       context = deepDefaults(errorData, context) as Record<string, unknown>
     },
 
+    info(message: string, infoContext?: FieldContext<T>): void {
+      addRequestLog('info', message)
+      if (infoContext) {
+        context = deepDefaults(infoContext as Record<string, unknown>, context) as Record<string, unknown>
+      }
+    },
+
+    warn(message: string, warnContext?: FieldContext<T>): void {
+      hasWarn = true
+      addRequestLog('warn', message)
+      if (warnContext) {
+        context = deepDefaults(warnContext as Record<string, unknown>, context) as Record<string, unknown>
+      }
+    },
+
     emit(overrides?: FieldContext<T> & { _forceKeep?: boolean }): WideEvent | null {
       const durationMs = Date.now() - startTime
       const duration = formatDuration(durationMs)
-      const level: LogLevel = hasError ? 'error' : 'info'
+      const level: LogLevel = hasError ? 'error' : hasWarn ? 'warn' : 'info'
 
       // Extract _forceKeep from overrides (set by evlog:emit:keep hook)
       const { _forceKeep, ...restOverrides } = (overrides ?? {}) as Record<string, unknown> & { _forceKeep?: boolean }
