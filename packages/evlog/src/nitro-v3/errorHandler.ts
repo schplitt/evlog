@@ -21,9 +21,8 @@ import { EvlogError } from '../error'
  * })
  * ```
  */
-export const evlogErrorHandler = defineErrorHandler(async (error, event, { defaultHandler }): Promise<Response> => {
+export const evlogErrorHandler = defineErrorHandler((error, event) => {
   // Check if this is an EvlogError (by name or by checking cause)
-
   const evlogError = error.name === 'EvlogError'
     ? error
     : (error.cause as Error)?.name === 'EvlogError'
@@ -33,18 +32,11 @@ export const evlogErrorHandler = defineErrorHandler(async (error, event, { defau
         : null
 
 
-  const isDev = process.env.NODE_ENV === 'development'
   const url = parseURL(event.req.url).pathname
 
   // For non-EvlogError, preserve Nitro's default response shape
   if (!evlogError) {
-    const res = await defaultHandler(error, event, { json: true })
-    const body = typeof res.body === 'string' ? res.body : JSON.stringify(res.body)
-    return new Response(body, {
-      status: res.status,
-      statusText: res.statusText,
-      headers: res.headers,
-    })
+    return
   }
 
 
