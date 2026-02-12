@@ -323,6 +323,16 @@ export type DeepPartial<T> = T extends Array<unknown>
 export interface InternalFields {
   status?: number
   service?: string
+  requestLogs?: RequestLogEntry[]
+}
+
+/**
+ * Request-scoped log entry captured during a request lifecycle.
+ */
+export interface RequestLogEntry {
+  level: 'info' | 'warn'
+  message: string
+  timestamp: string
 }
 
 /**
@@ -370,6 +380,16 @@ export interface RequestLogger<T extends object = Record<string, unknown>> {
    * Log an error and capture its details
    */
   error: (error: Error | string, context?: FieldContext<T>) => void
+
+  /**
+   * Capture an informational message inside the request wide event.
+   */
+  info: (message: string, context?: FieldContext<T>) => void
+
+  /**
+   * Capture a warning message inside the request wide event.
+   */
+  warn: (message: string, context?: FieldContext<T>) => void
 
   /**
    * Emit the final wide event with all accumulated context.

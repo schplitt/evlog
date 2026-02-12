@@ -209,6 +209,88 @@ describe('createRequestLogger', () => {
     expect(context.step).toBe('payment')
   })
 
+  it('captures info messages in requestLogs array', () => {
+    const logger = createRequestLogger({})
+
+    logger.info('Cache miss, fetching from database')
+
+    const context = logger.getContext()
+    expect(context.requestLogs).toEqual([
+      {
+        level: 'info',
+        message: 'Cache miss, fetching from database',
+        timestamp: expect.any(String),
+      },
+    ])
+  })
+
+  it('captures warning messages in requestLogs array and escalates final level', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const logger = createRequestLogger({})
+
+    logger.warn('Deprecated parameter used')
+    logger.emit()
+
+    const context = logger.getContext()
+    expect(context.requestLogs).toEqual([
+      {
+        level: 'warn',
+        message: 'Deprecated parameter used',
+        timestamp: expect.any(String),
+      },
+    ])
+
+    expect(warnSpy).toHaveBeenCalled()
+    const output = warnSpy.mock.calls[0]?.[0]
+    expect(output).toContain('"level":"warn"')
+  })
+
+  it('preserves chronological request logs and escalates warn over info', () => {
+    const logger = createRequestLogger({})
+
+    logger.info('User authenticated')
+    logger.info('Cache miss')
+    logger.warn('Deprecated parameter used')
+
+    const result = logger.emit()
+
+    expect(result).not.toBeNull()
+    expect(result).toHaveProperty('level', 'warn')
+    expect(result).toHaveProperty('requestLogs')
+    expect(Array.isArray(result?.requestLogs)).toBe(true)
+    expect((result?.requestLogs as Array<Record<string, unknown>>).map(entry => entry.level)).toEqual(['info', 'info', 'warn'])
+    expect((result?.requestLogs as Array<Record<string, unknown>>).map(entry => entry.message)).toEqual([
+      'User authenticated',
+      'Cache miss',
+      'Deprecated parameter used',
+    ])
+  })
+
+  it('merges context passed to info() and warn()', () => {
+    const logger = createRequestLogger({})
+
+    logger.info('Starting request', { user: { id: '123' } })
+    logger.warn('Slow downstream call', { downstream: { service: 'billing' } })
+
+    const context = logger.getContext()
+    expect(context.user).toEqual({ id: '123' })
+    expect(context.downstream).toEqual({ service: 'billing' })
+  })
+
+  it('does not clobber requestLogs when context contains requestLogs key', () => {
+    const logger = createRequestLogger({})
+
+    logger.info('First entry')
+    logger.info('Second entry', { requestLogs: 'should be ignored' } as any)
+    logger.warn('Third entry', { requestLogs: [{ fake: true }] } as any)
+
+    const context = logger.getContext()
+    expect(context.requestLogs).toHaveLength(3)
+    expect(context.requestLogs[0].message).toBe('First entry')
+    expect(context.requestLogs[1].message).toBe('Second entry')
+    expect(context.requestLogs[2].message).toBe('Third entry')
+  })
+
   it('captures custom error properties (statusCode, data, cause)', () => {
     const logger = createRequestLogger({})
     const error = Object.assign(new Error('Something went wrong'), {
