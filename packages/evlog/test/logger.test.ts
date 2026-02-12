@@ -209,13 +209,13 @@ describe('createRequestLogger', () => {
     expect(context.step).toBe('payment')
   })
 
-  it('captures info messages in logs array', () => {
+  it('captures info messages in requestLogs array', () => {
     const logger = createRequestLogger({})
 
     logger.info('Cache miss, fetching from database')
 
     const context = logger.getContext()
-    expect(context.logs).toEqual([
+    expect(context.requestLogs).toEqual([
       {
         level: 'info',
         message: 'Cache miss, fetching from database',
@@ -224,7 +224,7 @@ describe('createRequestLogger', () => {
     ])
   })
 
-  it('captures warning messages in logs array and escalates final level', () => {
+  it('captures warning messages in requestLogs array and escalates final level', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const logger = createRequestLogger({})
 
@@ -232,7 +232,7 @@ describe('createRequestLogger', () => {
     logger.emit()
 
     const context = logger.getContext()
-    expect(context.logs).toEqual([
+    expect(context.requestLogs).toEqual([
       {
         level: 'warn',
         message: 'Deprecated parameter used',
@@ -256,10 +256,10 @@ describe('createRequestLogger', () => {
 
     expect(result).not.toBeNull()
     expect(result).toHaveProperty('level', 'warn')
-    expect(result).toHaveProperty('logs')
-    expect(Array.isArray(result?.logs)).toBe(true)
-    expect((result?.logs as Array<Record<string, unknown>>).map(entry => entry.level)).toEqual(['info', 'info', 'warn'])
-    expect((result?.logs as Array<Record<string, unknown>>).map(entry => entry.message)).toEqual([
+    expect(result).toHaveProperty('requestLogs')
+    expect(Array.isArray(result?.requestLogs)).toBe(true)
+    expect((result?.requestLogs as Array<Record<string, unknown>>).map(entry => entry.level)).toEqual(['info', 'info', 'warn'])
+    expect((result?.requestLogs as Array<Record<string, unknown>>).map(entry => entry.message)).toEqual([
       'User authenticated',
       'Cache miss',
       'Deprecated parameter used',
@@ -277,18 +277,18 @@ describe('createRequestLogger', () => {
     expect(context.downstream).toEqual({ service: 'billing' })
   })
 
-  it('does not clobber logs when context contains logs key', () => {
+  it('does not clobber requestLogs when context contains requestLogs key', () => {
     const logger = createRequestLogger({})
 
     logger.info('First entry')
-    logger.info('Second entry', { logs: 'should be ignored' } as any)
-    logger.warn('Third entry', { logs: [{ fake: true }] } as any)
+    logger.info('Second entry', { requestLogs: 'should be ignored' } as any)
+    logger.warn('Third entry', { requestLogs: [{ fake: true }] } as any)
 
     const context = logger.getContext()
-    expect(context.logs).toHaveLength(3)
-    expect(context.logs[0].message).toBe('First entry')
-    expect(context.logs[1].message).toBe('Second entry')
-    expect(context.logs[2].message).toBe('Third entry')
+    expect(context.requestLogs).toHaveLength(3)
+    expect(context.requestLogs[0].message).toBe('First entry')
+    expect(context.requestLogs[1].message).toBe('Second entry')
+    expect(context.requestLogs[2].message).toBe('Third entry')
   })
 
   it('captures custom error properties (statusCode, data, cause)', () => {

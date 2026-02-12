@@ -323,7 +323,7 @@ export type DeepPartial<T> = T extends Array<unknown>
 export interface InternalFields {
   status?: number
   service?: string
-  logs?: RequestLogEntry[]
+  requestLogs?: RequestLogEntry[]
 }
 
 /**
