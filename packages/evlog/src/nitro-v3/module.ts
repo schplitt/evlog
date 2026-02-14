@@ -1,6 +1,7 @@
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { NitroModuleOptions } from '../nitro'
+
 export type { NitroModuleOptions }
 
 const _dir = dirname(fileURLToPath(import.meta.url))
