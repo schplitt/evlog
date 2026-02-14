@@ -1,0 +1,19 @@
+{
+  "name": "evlog-solidstart-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vinxi dev",
+    "build": "vinxi build",
+    "start": "vinxi start"
+  },
+  "dependencies": {
+    "@solidjs/router": "latest",
+    "@solidjs/start": "latest",
+    "evlog": "workspace:*",
+    "solid-js": "latest"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

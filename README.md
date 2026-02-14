@@ -862,7 +862,7 @@ evlog works with any framework powered by [Nitro](https://nitro.unjs.io/):
 | **Nitro v2** | `modules: [evlog()]` with `import evlog from 'evlog/nitro'` |
 | **Analog** | Nitro v2 module setup |
 | **Vinxi** | Nitro v2 module setup |
-| **SolidStart** | Nitro v2 module setup |
+| **SolidStart** | Nitro v2 module setup ([example](./examples/solidstart)) |
 | **TanStack Start** | Nitro v2 module setup |
 
 ## Agent Skills
