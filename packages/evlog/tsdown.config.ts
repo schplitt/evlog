@@ -52,5 +52,6 @@ export default defineConfig({
     'nitro/types',
     'ofetch',
     'h3',
+    'ufo',
   ],
 })
