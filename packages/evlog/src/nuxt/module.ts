@@ -214,7 +214,7 @@ export default defineNuxtModule<ModuleOptions>({
 
     nuxt.options.runtimeConfig.evlog = options
     nuxt.options.runtimeConfig.public.evlog = {
-      enabled: options.enabled,
+      enabled: options.enabled ?? true,
       pretty: options.pretty,
       transport: {
         enabled: transportEnabled,
@@ -240,6 +240,14 @@ export default defineNuxtModule<ModuleOptions>({
     addImports([
       {
         name: 'log',
+        from: resolver.resolve('../runtime/client/log'),
+      },
+      {
+        name: 'setIdentity',
+        from: resolver.resolve('../runtime/client/log'),
+      },
+      {
+        name: 'clearIdentity',
         from: resolver.resolve('../runtime/client/log'),
       },
       {

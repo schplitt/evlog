@@ -100,6 +100,55 @@ export const testConfig = {
       ],
     } as TestSection,
     {
+      id: 'identity',
+      label: 'Identity',
+      icon: 'i-lucide-user',
+      title: 'Client Identity',
+      description: 'Attach user identity to all client logs via setIdentity(). Identity fields are included in every log and transported to the server. PostHog auto-maps userId → distinct_id.',
+      layout: 'cards',
+      tests: [
+        {
+          id: 'identity-set',
+          label: 'setIdentity()',
+          description: 'Sets userId and orgId on all future client logs. Open the console and check the transport payload.',
+          color: 'primary',
+          badge: {
+            label: 'setIdentity',
+            color: 'blue',
+          },
+        },
+        {
+          id: 'identity-log',
+          label: 'log.info() with identity',
+          description: 'Emits a log — identity fields (userId, orgId) are automatically included.',
+          badge: {
+            label: 'Auto-enriched',
+            color: 'green',
+          },
+        },
+        {
+          id: 'identity-override',
+          label: 'Override userId',
+          description: 'Per-event fields take priority over identity. This log overrides userId.',
+          color: 'warning',
+          badge: {
+            label: 'Event > Identity',
+            color: 'warning',
+          },
+        },
+        {
+          id: 'identity-clear',
+          label: 'clearIdentity()',
+          description: 'Clears identity context. Future logs will no longer include userId/orgId.',
+          color: 'error',
+          badge: {
+            label: 'clearIdentity',
+            color: 'red',
+          },
+        },
+      ],
+    } as TestSection,
+    {
       id: 'wide-events',
       label: 'Wide Events',
       icon: 'i-lucide-server',
@@ -299,6 +348,58 @@ export const testConfig = {
           toastOnSuccess: {
             title: '10 requests sent',
             description: 'Check terminal - should see 2 batches of 5 events',
+          },
+        },
+      ],
+    } as TestSection,
+    {
+      id: 'browser-drain',
+      label: 'Browser Drain',
+      icon: 'i-lucide-globe',
+      title: 'Browser Drain',
+      description: 'Send browser logs to your server via fetch/sendBeacon. Events are batched and flushed automatically. Check the terminal for [BROWSER DRAIN] output.',
+      layout: 'cards',
+      tests: [
+        {
+          id: 'browser-drain-quick',
+          label: 'Quick Setup',
+          description: 'Creates a browser drain, pushes a single event via initLogger + log.info, and flushes immediately.',
+          color: 'primary',
+          badge: {
+            label: 'fetch POST',
+            color: 'blue',
+          },
+          toastOnSuccess: {
+            title: 'Browser drain event sent',
+            description: 'Check terminal for [BROWSER DRAIN] output',
+          },
+        },
+        {
+          id: 'browser-drain-batch',
+          label: 'Batch 5 Events',
+          description: 'Creates the drain, pushes 5 events, and flushes. Demonstrates batching.',
+          color: 'success',
+          badge: {
+            label: '5 events batched',
+            color: 'green',
+          },
+          toastOnSuccess: {
+            title: '5 events batched and sent',
+            description: 'Check terminal for [BROWSER DRAIN] output',
+          },
+        },
+        {
+          id: 'browser-drain-beacon',
+          label: 'Auto-flush (Page Hidden)',
+          description: 'Pushes events with autoFlush enabled (default). Switch tabs or navigate away — the visibilitychange listener flushes via sendBeacon automatically.',
+          color: 'warning',
+          badge: {
+            label: 'sendBeacon',
+            color: 'warning',
+          },
+          toastOnSuccess: {
+            title: 'Events buffered',
+            description: 'Navigate away or switch tabs — events will flush via sendBeacon',
           },
         },
       ],

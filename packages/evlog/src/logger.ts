@@ -230,12 +230,14 @@ function createLogMethod(level: LogLevel) {
  * log.error({ action: 'payment', error: 'failed' })
  * ```
  */
-export const log: Log = {
+const _log: Log = {
   info: createLogMethod('info'),
   error: createLogMethod('error'),
   warn: createLogMethod('warn'),
   debug: createLogMethod('debug'),
 }
+
+export { _log as log }
 
 const noopLogger: RequestLogger = {
   set() {},
@@ -305,6 +307,8 @@ export function createRequestLogger<T extends object = Record<string, unknown>>(
           name: err.name,
           message: err.message,
           stack: err.stack,
+          ...('status' in err && { status: (err as Record<string, unknown>).status }),
+          ...('statusText' in err && { statusText: (err as Record<string, unknown>).statusText }),
           ...('statusCode' in err && { statusCode: (err as Record<string, unknown>).statusCode }),
           ...('statusMessage' in err && { statusMessage: (err as Record<string, unknown>).statusMessage }),
           ...('data' in err && { data: (err as Record<string, unknown>).data }),

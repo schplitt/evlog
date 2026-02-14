@@ -8,6 +8,15 @@ let clientPretty = true
 let clientService = 'client'
 let transportEnabled = false
 let transportEndpoint = '/api/_evlog/ingest'
+let identityContext: Record<string, unknown> = {}
+
+export function setIdentity(identity: Record<string, unknown>): void {
+  identityContext = { ...identity }
+}
+
+export function clearIdentity(): void {
+  identityContext = {}
+}
 
 const LEVEL_COLORS: Record<string, string> = {
   error: 'color: #ef4444; font-weight: bold',
@@ -17,8 +26,8 @@ const LEVEL_COLORS: Record<string, string> = {
 }
 
 export function initLog(options: { enabled?: boolean, pretty?: boolean, service?: string, transport?: TransportConfig } = {}): void {
-  clientEnabled = options.enabled ?? true
-  clientPretty = options.pretty ?? true
+  clientEnabled = typeof options.enabled === 'boolean' ? options.enabled : true
+  clientPretty = typeof options.pretty === 'boolean' ? options.pretty : true
   clientService = options.service ?? 'client'
   transportEnabled = options.transport?.enabled ?? false
   transportEndpoint = options.transport?.endpoint ?? '/api/_evlog/ingest'
@@ -47,6 +56,7 @@ function emitLog(level: LogLevel, event: Record<string, unknown>): void {
     timestamp: new Date().toISOString(),
     level,
     service: clientService,
+    ...identityContext,
     ...event,
   }
 
@@ -64,13 +74,13 @@ function emitLog(level: LogLevel, event: Record<string, unknown>): void {
 
 function emitTaggedLog(level: LogLevel, tag: string, message: string): void {
   if (!clientEnabled) return
-
   if (clientPretty) {
     console[getConsoleMethod(level)](`%c[${tag}]%c ${message}`, LEVEL_COLORS[level] || '', 'color: inherit')
     sendToServer({
       timestamp: new Date().toISOString(),
       level,
       service: clientService,
+      ...identityContext,
       tag,
       message,
     })
@@ -95,9 +105,11 @@ function createLogMethod(level: LogLevel) {
   }
 }
 
-export const log: Log = {
+const _clientLog: Log = {
   info: createLogMethod('info'),
   error: createLogMethod('error'),
   warn: createLogMethod('warn'),
   debug: createLogMethod('debug'),
 }
+
+export { _clientLog as log }
