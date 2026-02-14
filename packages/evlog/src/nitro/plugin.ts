@@ -1,20 +1,15 @@
 import type { NitroApp } from 'nitropack/types'
-import { defineNitroPlugin, useRuntimeConfig } from 'nitropack/runtime'
+// Import from specific subpaths to avoid the barrel 'nitropack/runtime' which
+// re-exports from internal/app.mjs — that file imports #nitro-internal-virtual/*
+// modules that only exist inside rollup builds and crash when loaded externally
+// (nitropack dev loads plugins outside the bundle via Worker threads).
+import { defineNitroPlugin } from 'nitropack/runtime/internal/plugin'
 import { getHeaders } from 'h3'
 import { createRequestLogger, initLogger, isEnabled } from '../logger'
-import { shouldLog, getServiceForPath } from '../nitro'
-import type { EnrichContext, RequestLogger, RouteConfig, SamplingConfig, ServerEvent, TailSamplingContext, WideEvent } from '../types'
+import { shouldLog, getServiceForPath, extractErrorStatus } from '../nitro'
+import type { EvlogConfig } from '../nitro'
+import type { EnrichContext, RequestLogger, ServerEvent, TailSamplingContext, WideEvent } from '../types'
 import { filterSafeHeaders } from '../utils'
-
-interface EvlogConfig {
-  enabled?: boolean
-  env?: Record<string, unknown>
-  pretty?: boolean
-  include?: string[]
-  exclude?: string[]
-  routes?: Record<string, RouteConfig>
-  sampling?: SamplingConfig
-}
 
 function getSafeHeaders(event: ServerEvent): Record<string, string> {
   const allHeaders = getHeaders(event as Parameters<typeof getHeaders>[0])
@@ -104,9 +99,22 @@ async function callEnrichAndDrain(
   }
 }
 
-export default defineNitroPlugin((nitroApp) => {
-  const config = useRuntimeConfig()
-  const evlogConfig = config.evlog as EvlogConfig | undefined
+export default defineNitroPlugin(async (nitroApp) => {
+  // Config resolution: process.env bridge first (always set by the module),
+  // then lazy useRuntimeConfig() for production builds where env may not persist.
+  let evlogConfig: EvlogConfig | undefined
+  if (process.env.__EVLOG_CONFIG) {
+    evlogConfig = JSON.parse(process.env.__EVLOG_CONFIG)
+  } else {
+    try {
+      // nitropack/runtime/internal/config imports virtual modules —
+      // only works inside rollup-bundled output (production builds).
+      const { useRuntimeConfig } = await import('nitropack/runtime/internal/config')
+      evlogConfig = (useRuntimeConfig() as Record<string, any>).evlog
+    } catch {
+      // Expected in dev mode — virtual modules unavailable outside rollup
+    }
+  }
 
   initLogger({
     enabled: evlogConfig?.enabled,
@@ -157,8 +165,7 @@ export default defineNitroPlugin((nitroApp) => {
     if (requestLog) {
       requestLog.error(error as Error)
 
-      // Get the actual error status code
-      const errorStatus = (error as { statusCode?: number }).statusCode ?? 500
+      const errorStatus = extractErrorStatus(error)
       requestLog.set({ status: errorStatus })
 
       // Build tail sampling context

@@ -1,5 +1,5 @@
 import { defineHandler, readBody } from 'nitro/h3'
-import { useLogger } from 'evlog'
+import { useLogger } from 'evlog/nitro/v3'
 
 export default defineHandler(async (event) => {
   const log = useLogger(event)

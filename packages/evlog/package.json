@@ -32,16 +32,12 @@
       "import": "./dist/nuxt/module.mjs"
     },
     "./nitro": {
-      "types": "./dist/nitro/plugin.d.mts",
-      "import": "./dist/nitro/plugin.mjs"
+      "types": "./dist/nitro/module.d.mts",
+      "import": "./dist/nitro/module.mjs"
     },
     "./nitro/v3": {
-      "types": "./dist/nitro/v3/plugin.d.mts",
-      "import": "./dist/nitro/v3/plugin.mjs"
-    },
-    "./nitro/v3/errorHandler": {
-      "types": "./dist/nitro/v3/errorHandler.d.mts",
-      "import": "./dist/nitro/v3/errorHandler.mjs"
+      "types": "./dist/nitro/v3/index.d.mts",
+      "import": "./dist/nitro/v3/index.mjs"
     },
     "./workers": {
       "types": "./dist/workers.d.mts",
@@ -91,13 +87,10 @@
         "./dist/nuxt/module.d.mts"
       ],
       "nitro": [
-        "./dist/nitro/plugin.d.mts"
+        "./dist/nitro/module.d.mts"
       ],
       "nitro/v3": [
-        "./dist/nitro/v3/plugin.d.mts"
-      ],
-      "nitro/v3/errorHandler": [
-        "./dist/nitro/v3/errorHandler.d.mts"
+        "./dist/nitro/v3/index.d.mts"
       ],
       "workers": [
         "./dist/workers.d.mts"
@@ -143,9 +136,6 @@
     "test:watch": "vitest watch",
     "test:coverage": "vitest run --coverage",
     "typecheck": "echo 'Typecheck handled by build'"
-  },
-  "dependencies": {
-    "@nuxt/kit": "^4.3.0"
   },
   "devDependencies": {
     "ufo": "^1.6.3",

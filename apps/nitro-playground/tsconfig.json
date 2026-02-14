@@ -1,8 +1,9 @@
 {
   "extends": ["nitro/tsconfig"],
   "compilerOptions": {
+    "moduleResolution": "bundler",
     "paths": {
-      "~/*": ["./*"]
+      "~/*": ["./*"],
     }
   }
 }

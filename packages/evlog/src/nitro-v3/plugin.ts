@@ -3,19 +3,11 @@ import { useRuntimeConfig } from 'nitro/runtime-config'
 import type { CaptureError } from 'nitro/types'
 import type { HTTPEvent } from 'nitro/h3'
 import { parseURL } from 'ufo'
-import { createRequestLogger, initLogger } from '../logger'
-import { shouldLog, getServiceForPath } from '../nitro'
-import type { EnrichContext, RequestLogger, RouteConfig, SamplingConfig, TailSamplingContext, WideEvent } from '../types'
+import { createRequestLogger, initLogger, isEnabled } from '../logger'
+import { shouldLog, getServiceForPath, extractErrorStatus } from '../nitro'
+import type { EvlogConfig } from '../nitro'
+import type { EnrichContext, RequestLogger, TailSamplingContext, WideEvent } from '../types'
 import { filterSafeHeaders } from '../utils'
-
-interface EvlogConfig {
-  env?: Record<string, unknown>
-  pretty?: boolean
-  include?: string[]
-  exclude?: string[]
-  routes?: Record<string, RouteConfig>
-  sampling?: SamplingConfig
-}
 
 // Nitro v3 doesn't fully export hook types yet
 // https://github.com/nitrojs/nitro/blob/8882bc9e1dbf2d342e73097f22a2156f70f50575/src/types/runtime/nitro.ts#L48-L53
@@ -129,14 +121,20 @@ async function callEnrichAndDrain(
  * ```
  */
 export default definePlugin((nitroApp) => {
-  const config = useRuntimeConfig()
-  const evlogConfig = config.evlog as EvlogConfig | undefined
+  // In production builds the plugin is bundled and useRuntimeConfig()
+  // resolves the virtual module correctly. In dev mode the plugin is
+  // loaded externally so useRuntimeConfig() returns a stub — fall back
+  // to the env var bridge set by the module.
+  const evlogConfig = (useRuntimeConfig().evlog ?? (process.env.__EVLOG_CONFIG ? JSON.parse(process.env.__EVLOG_CONFIG) : undefined)) as EvlogConfig | undefined
 
   initLogger({
+    enabled: evlogConfig?.enabled,
     env: evlogConfig?.env,
     pretty: evlogConfig?.pretty,
     sampling: evlogConfig?.sampling,
   })
+
+  if (!isEnabled()) return
 
   const hooks = nitroApp.hooks as unknown as Hooks
 
@@ -220,11 +218,7 @@ export default definePlugin((nitroApp) => {
 
     log.error(actualError)
 
-    // Get the actual error status code (from EvlogError if available)
-    const errorStatus = (actualError as { status?: number }).status
-      ?? (actualError as { statusCode?: number }).statusCode 
-      ?? (error as { statusCode?: number }).statusCode 
-      ?? 500
+    const errorStatus = extractErrorStatus(actualError)
     log.set({ status: errorStatus })
 
     const { pathname } = parseURL(e.req.url)

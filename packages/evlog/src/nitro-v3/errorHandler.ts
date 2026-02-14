@@ -1,15 +1,13 @@
-import type { HTTPEvent } from 'nitro/h3'
 import { parseURL } from 'ufo'
 import { defineErrorHandler } from 'nitro'
-import { EvlogError } from '../error'
+import { resolveEvlogError, extractErrorStatus, serializeEvlogErrorResponse } from '../nitro'
 
 /**
  * Custom Nitro v3 error handler that properly serializes EvlogError.
  * This ensures that 'data' (containing 'why', 'fix', 'link') is preserved
  * in the JSON response regardless of the underlying HTTP framework.
  *
- * For non-EvlogError, it preserves Nitro's default response shape while
- * sanitizing internal error details in production for 5xx errors.
+ * For non-EvlogError, returns undefined to let Nitro's default handler take over.
  *
  * Usage in nitro.config.ts:
  * ```ts
@@ -21,47 +19,16 @@ import { EvlogError } from '../error'
  * })
  * ```
  */
-export const evlogErrorHandler = defineErrorHandler((error, event) => {
-  // Check if this is an EvlogError (by name or by checking cause)
-  const evlogError = error.name === 'EvlogError'
-    ? error
-    : (error.cause as Error)?.name === 'EvlogError'
-      ? error.cause as Error
-      : error.cause instanceof EvlogError 
-        ? error.cause
-        : null
+export default defineErrorHandler((error, event) => {
+  const evlogError = resolveEvlogError(error)
 
+  if (!evlogError) return
 
   const url = parseURL(event.req.url).pathname
+  const status = extractErrorStatus(evlogError)
 
-  // For non-EvlogError, preserve Nitro's default response shape
-  if (!evlogError) {
-    return
-  }
-
-
-  // Derive status from evlogError to ensure consistency between
-  // HTTP response status and response body
-  const status = (evlogError as { status?: number }).status
-    ?? (evlogError as { statusCode?: number }).statusCode
-    ?? 500
-
-  // Serialize EvlogError with all its data, preserving Nitro's response shape
-  const { data } = evlogError as { data?: unknown }
-  const statusMessage = (evlogError as { statusMessage?: string }).statusMessage || evlogError.message
-  return new Response(JSON.stringify({
-    url,
-    status,
-    statusCode: status,
-    statusText: statusMessage,
-    statusMessage,
-    message: evlogError.message,
-    error: true,
-    ...(data !== undefined && { data }),
-  }), {
+  return new Response(JSON.stringify(serializeEvlogErrorResponse(evlogError, url)), {
     status,
     headers: { 'Content-Type': 'application/json' },
   })
 })
-
-export default evlogErrorHandler
