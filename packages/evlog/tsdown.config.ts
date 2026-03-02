@@ -55,9 +55,9 @@ export default defineConfig({
     'nitro/types',
     'ofetch',
     'h3',
-    'ufo',
     'next',
     'next/server',
     'react',
   ],
+  inlineOnly: ['ufo']
 })
